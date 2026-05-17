@@ -94,7 +94,7 @@ def step_install(repo=None):
     # Install Python dependencies
     print("\n🐍 Verificando dependencias...")
     missing = []
-    for pkg in ["faster_whisper", "ultralytics", "fastapi", "uvicorn", "yt_dlp", "boto3", "bs4"]:
+    for pkg in ["faster_whisper", "ultralytics", "fastapi", "uvicorn", "yt_dlp", "boto3", "bs4", "mediapipe"]:
         try:
             __import__(pkg)
         except ImportError:
