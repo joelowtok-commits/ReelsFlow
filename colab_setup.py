@@ -1,15 +1,14 @@
 """
-kaggle_setup.py — Script para ejecutar en Kaggle Notebook.
+colab_setup.py — Script para ejecutar en Google Colab.
 
 Instrucciones:
-  1. Crea un nuevo Notebook en Kaggle con GPU T4 x2
-  2. Sube este archivo al notebook o copia el contenido en una celda
-  3. Ejecuta: !python kaggle_setup.py --authkey "tskey-auth-XXXXX" --repo "joelowtok-commits/ReelsFlow"
-  
-  O en celdas separadas:
-    Celda 1: !python kaggle_setup.py --step tailscale --authkey "tskey-auth-XXXXX"
-    Celda 2: !python kaggle_setup.py --step install --repo "tu-usuario/OpenShorts"
-    Celda 3: !python kaggle_setup.py --step server
+  1. Crea un nuevo cuaderno en Google Colab con GPU T4.
+  2. Ejecuta la celda para clonar e instalar:
+     !git clone https://github.com/joelowtok-commits/ReelsFlow.git
+     !bash ReelsFlow/colab_install.sh
+     
+  3. Ejecuta el servidor:
+     !python ReelsFlow/colab_setup.py --authkey "tskey-auth-XXXXX" --repo "joelowtok-commits/ReelsFlow"
 """
 
 import subprocess
@@ -17,7 +16,6 @@ import os
 import sys
 import time
 import argparse
-import json
 
 
 def run(cmd, check=True, shell=True, capture=False):
@@ -44,7 +42,7 @@ def step_tailscale(authkey):
     run("pkill tailscaled || true")
     time.sleep(1)
 
-    # Start daemon in userspace mode (Kaggle doesn't allow tun devices)
+    # Start daemon in userspace mode
     print("\n🚀 Iniciando Tailscale daemon...")
     subprocess.Popen(
         "nohup tailscaled --tun=userspace-networking "
@@ -77,10 +75,10 @@ def step_install(repo=None):
 
     # System packages
     print("\n📦 Paquetes del sistema...")
-    run("apt-get update -qq && apt-get install -qq -y ffmpeg", check=False)
+    run("apt-get update -qq && apt-get install -qq -y ffmpeg btop nvtop", check=False)
 
     # Clone repo
-    work_dir = "/kaggle/working/OpenShorts"
+    work_dir = "/content/OpenShorts"
     if repo:
         print(f"\n📂 Clonando repo: {repo}")
         if os.path.exists(work_dir):
@@ -94,15 +92,26 @@ def step_install(repo=None):
             return work_dir
 
     # Install Python dependencies
-    print("\n🐍 Instalando dependencias Python (GPU)...")
-    req_file = os.path.join(work_dir, "requirements-kaggle.txt")
-    if os.path.exists(req_file):
-        run(f"pip install -q -r {req_file}")
+    print("\n🐍 Verificando dependencias...")
+    missing = []
+    for pkg in ["faster_whisper", "ultralytics", "fastapi", "uvicorn", "yt_dlp", "boto3", "bs4"]:
+        try:
+            __import__(pkg)
+        except ImportError:
+            missing.append(pkg)
+    
+    if missing:
+        print(f"  ⚠️ Faltan paquetes: {', '.join(missing)}")
+        print(f"  💡 Ejecutá primero: !bash {os.path.join(work_dir, 'colab_install.sh')}")
+        print(f"  Intentando instalar automáticamente...")
+        install_script = os.path.join(work_dir, "colab_install.sh")
+        if os.path.exists(install_script):
+            os.system(f"bash {install_script}")
+        else:
+            for pkg in missing:
+                os.system(f"pip install -q --no-cache-dir {pkg}")
     else:
-        # Fallback to regular requirements
-        req_file = os.path.join(work_dir, "requirements.txt")
-        if os.path.exists(req_file):
-            run(f"pip install -q -r {req_file}")
+        print("  ✅ Todas las dependencias están instaladas")
 
     # Verify GPU
     print("\n🎮 Verificando GPU...")
@@ -110,7 +119,7 @@ def step_install(repo=None):
     if result and result.stdout.strip():
         print(f"  ✅ GPU detectada: {result.stdout.strip()}")
     else:
-        print("  ⚠️ No se detectó GPU. Asegurate de activar GPU en Kaggle Settings.")
+        print("  ⚠️ No se detectó GPU. Asegurate de activar GPU en Colab Settings (Runtime -> Change runtime type).")
 
     # Verify torch CUDA
     try:
@@ -132,7 +141,7 @@ def step_server(work_dir=None, gemini_key=None):
     print("=" * 60)
 
     if not work_dir:
-        work_dir = "/kaggle/working/OpenShorts"
+        work_dir = "/content/OpenShorts"
 
     if not os.path.exists(os.path.join(work_dir, "app.py")):
         print(f"  ❌ No se encontró app.py en {work_dir}")
@@ -163,7 +172,7 @@ def step_server(work_dir=None, gemini_key=None):
     print(f"\n🌐 Backend URL: http://{ts_ip}:8000")
     print(f"\n📋 En tu PC Windows, ejecutá:")
     print(f"   cd E:\\PROYECTOS_PY\\OpenShorts\\1.1")
-    print(f"   python auto_connect_kaggle.py")
+    print(f"   python auto_connect_colab.py")
     print(f"\n   O manualmente:")
     print(f"   cd dashboard")
     print(f"   set VITE_BACKEND_URL=http://{ts_ip}:8000")
@@ -186,7 +195,7 @@ def step_server(work_dir=None, gemini_key=None):
 def run_all(authkey, repo=None, gemini_key=None):
     """Run all steps sequentially."""
     print("\n" + "=" * 60)
-    print("🚀 OpenShorts — Kaggle GPU Backend Setup")
+    print("🚀 OpenShorts — Colab GPU Backend Setup")
     print("=" * 60)
 
     # Step 1
@@ -200,20 +209,20 @@ def run_all(authkey, repo=None, gemini_key=None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="OpenShorts Kaggle Setup")
+    parser = argparse.ArgumentParser(description="OpenShorts Colab Setup")
     parser.add_argument("--step", choices=["tailscale", "install", "server", "all"],
                         default="all", help="Which step to run")
     parser.add_argument("--authkey", type=str, help="Tailscale Auth Key")
     parser.add_argument("--repo", type=str, help="GitHub repo (user/repo)")
     parser.add_argument("--gemini-key", type=str, help="Gemini API Key")
-    parser.add_argument("--workdir", type=str, default="/kaggle/working/OpenShorts",
+    parser.add_argument("--workdir", type=str, default="/content/OpenShorts",
                         help="Working directory")
     args = parser.parse_args()
 
     if args.step == "all":
         if not args.authkey:
             print("❌ --authkey es obligatorio para el setup completo")
-            print("   Uso: python kaggle_setup.py --authkey 'tskey-auth-XXXXX' --repo 'user/OpenShorts'")
+            print("   Uso: python colab_setup.py --authkey 'tskey-auth-XXXXX' --repo 'user/ReelsFlow'")
             sys.exit(1)
         run_all(args.authkey, args.repo, args.gemini_key)
 

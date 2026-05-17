@@ -74,10 +74,10 @@ OUTPUT — RETURN ONLY VALID JSON (no markdown, no comments). Order clips by pre
 # Load the YOLO model once (Keep for backup or scene analysis if needed)
 model = YOLO('yolov8n.pt')
 
-# --- MediaPipe Setup ---
-# Use standard Face Detection (BlazeFace) for speed
-mp_face_detection = mp.solutions.face_detection
-face_detection = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+# --- Face Detection Setup (OpenCV) ---
+# Use OpenCV Haar Cascade to avoid Mediapipe/Protobuf dependency bugs
+import cv2
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
 class SmoothedCameraman:
     """
@@ -282,27 +282,17 @@ class SpeakerTracker:
 
 def detect_face_candidates(frame):
     """
-    Returns list of all detected faces using lightweight FaceDetection.
+    Returns list of all detected faces using OpenCV Haar Cascade (Fast, no Mediapipe bugs).
     """
-    height, width, _ = frame.shape
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_detection.process(rgb_frame)
-    
     candidates = []
     
-    if not results.detections:
-        return []
-        
-    for detection in results.detections:
-        bboxC = detection.location_data.relative_bounding_box
-        x = int(bboxC.xmin * width)
-        y = int(bboxC.ymin * height)
-        w = int(bboxC.width * width)
-        h = int(bboxC.height * height)
-        
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40))
+    
+    for (x, y, w, h) in faces:
         candidates.append({
-            'box': [x, y, w, h],
-            'score': w * h # Area as score
+            'box': [int(x), int(y), int(w), int(h)],
+            'score': int(w * h) # Area as score
         })
             
     return candidates

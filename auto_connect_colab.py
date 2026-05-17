@@ -1,10 +1,10 @@
 """
-auto_connect_kaggle.py — Auto-detecta 'kaggle-gpu' en Tailscale y configura el proxy.
+auto_connect_colab.py — Auto-detecta 'reelsflow' (o colab-gpu) en Tailscale y configura el proxy.
 
 Uso:
-    python auto_connect_kaggle.py
+    python auto_connect_colab.py
     
-Esto busca la máquina 'kaggle-gpu' en tu red Tailscale, obtiene su IP,
+Esto busca la máquina 'reelsflow' en tu red Tailscale, obtiene su IP,
 y lanza el dashboard apuntando al backend remoto automáticamente.
 """
 import subprocess
@@ -18,7 +18,7 @@ if sys.platform == 'win32':
     sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
     sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
-HOSTNAMES_TO_FIND = ["reelsflow", "kaggle-gpu", "colab-gpu", "colab"]
+HOSTNAMES_TO_FIND = ["reelsflow", "colab-gpu", "colab", "kaggle-gpu"]
 
 
 def get_tailscale_status():
@@ -39,7 +39,7 @@ def get_tailscale_status():
 
 
 def find_gpu_machine(status_data):
-    """Busca kaggle-gpu o colab-gpu en los peers de Tailscale."""
+    """Busca reelsflow o colab-gpu en los peers de Tailscale."""
     if not status_data:
         return None, None
 
@@ -70,7 +70,7 @@ def verify_backend(ip):
 
 def main():
     print("=" * 60)
-    print("🔍 OpenShorts — Auto Connect Kaggle GPU")
+    print("🔍 OpenShorts — Auto Connect Colab GPU")
     print("=" * 60)
 
     # 1. Check Tailscale
@@ -105,7 +105,7 @@ def main():
             print("   (no hay peers conectados)")
 
         print("\n💡 Asegurate de que:")
-        print("   1. El notebook de Kaggle esté ejecutándose")
+        print("   1. El notebook de Colab esté ejecutándose")
         print("   2. Ambas máquinas estén en la misma cuenta de Tailscale")
         sys.exit(1)
 
@@ -131,7 +131,7 @@ def main():
 
     # 4. Show how to use
     print(f"\n{'=' * 60}")
-    print(f"🚀 Para usar OpenShorts con Kaggle GPU:")
+    print(f"🚀 Para usar OpenShorts con Colab GPU:")
     print(f"{'=' * 60}")
     print(f"\n   cd dashboard")
     print(f"   set VITE_BACKEND_URL=http://{gpu_ip}:8000")
@@ -144,7 +144,7 @@ def main():
     try:
         answer = input("\n¿Lanzar el dashboard ahora? (s/n): ").strip().lower()
         if answer in ('s', 'si', 'y', 'yes', ''):
-            print(f"\n🚀 Lanzando dashboard apuntando a Kaggle GPU...")
+            print(f"\n🚀 Lanzando dashboard apuntando a Colab GPU...")
             dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
             env = os.environ.copy()
             env["VITE_BACKEND_URL"] = f"http://{gpu_ip}:8000"
