@@ -632,7 +632,7 @@ def process_video_to_vertical(input_video, final_output_video):
         enc_check = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True)
         if 'h264_nvenc' in enc_check.stdout:
             vcodec = 'h264_nvenc'
-            encode_opts = ['-preset', 'p4', '-cq', '23']
+            encode_opts = ['-preset', 'fast', '-cq', '23']
             print("   ⚡ Using NVENC GPU encoding")
     except Exception:
         pass
@@ -710,7 +710,13 @@ def process_video_to_vertical(input_video, final_output_video):
                 else:
                     output_frame = cv2.resize(frame, (OUTPUT_WIDTH, OUTPUT_HEIGHT))
 
-            ffmpeg_process.stdin.write(output_frame.tobytes())
+            try:
+                ffmpeg_process.stdin.write(output_frame.tobytes())
+            except BrokenPipeError:
+                print("\n   ❌ FFmpeg crashed prematurely (Broken Pipe).")
+                stderr_output = ffmpeg_process.stderr.read().decode()
+                print("   FFmpeg Stderr:", stderr_output)
+                break
             frame_number += 1
             pbar.update(1)
     
