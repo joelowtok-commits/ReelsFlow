@@ -972,7 +972,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Apply output format globally
-    global OUTPUT_FORMAT
     OUTPUT_FORMAT = args.format
     print(f"📐 Output format: {OUTPUT_FORMAT}")
 
