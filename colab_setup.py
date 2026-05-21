@@ -134,7 +134,7 @@ def step_install(repo=None):
     return work_dir
 
 
-def step_server(work_dir=None, gemini_key=None):
+def step_server(work_dir=None, gemini_key=None, aws_id=None, aws_secret=None, aws_region=None, aws_bucket=None, aws_public_bucket=None, aws_endpoint=None):
     """Launch the OpenShorts backend server."""
     print("\n" + "=" * 60)
     print("🚀 STEP 3: Lanzando Servidor OpenShorts")
@@ -156,6 +156,22 @@ def step_server(work_dir=None, gemini_key=None):
     if gemini_key:
         env["GEMINI_API_KEY"] = gemini_key
         print(f"  ✅ GEMINI_API_KEY configurada")
+
+    if aws_id:
+        env["AWS_ACCESS_KEY_ID"] = aws_id
+        print("  ✅ AWS_ACCESS_KEY_ID configurada")
+    if aws_secret:
+        env["AWS_SECRET_ACCESS_KEY"] = aws_secret
+        print("  ✅ AWS_SECRET_ACCESS_KEY configurada")
+    if aws_region:
+        env["AWS_REGION"] = aws_region
+    if aws_bucket:
+        env["AWS_S3_BUCKET"] = aws_bucket
+    if aws_public_bucket:
+        env["AWS_S3_PUBLIC_BUCKET"] = aws_public_bucket
+    if aws_endpoint:
+        env["AWS_ENDPOINT_URL"] = aws_endpoint
+        print("  ✅ AWS_ENDPOINT_URL configurada")
 
     # Expose port via Tailscale
     print("\n🌐 Exponiendo puerto 8000 via Tailscale...")
@@ -192,7 +208,7 @@ def step_server(work_dir=None, gemini_key=None):
     )
 
 
-def run_all(authkey, repo=None, gemini_key=None):
+def run_all(authkey, repo=None, gemini_key=None, aws_id=None, aws_secret=None, aws_region=None, aws_bucket=None, aws_public_bucket=None, aws_endpoint=None):
     """Run all steps sequentially."""
     print("\n" + "=" * 60)
     print("🚀 OpenShorts — Colab GPU Backend Setup")
@@ -205,26 +221,32 @@ def run_all(authkey, repo=None, gemini_key=None):
     work_dir = step_install(repo)
 
     # Step 3 (blocking)
-    step_server(work_dir, gemini_key)
+    step_server(work_dir, gemini_key, aws_id, aws_secret, aws_region, aws_bucket, aws_public_bucket, aws_endpoint)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OpenShorts Colab Setup")
     parser.add_argument("--step", choices=["tailscale", "install", "server", "all"],
                         default="all", help="Which step to run")
-    parser.add_argument("--authkey", type=str, help="Tailscale Auth Key")
-    parser.add_argument("--repo", type=str, help="GitHub repo (user/repo)")
+    parser.add_argument("--authkey", type=str, default="tskey-auth-krZx6WbEQB11CNTRL-LpqR2MS6YeWXF9fRMSp7eWLEXDTGBJv2", help="Tailscale Auth Key")
+    parser.add_argument("--repo", type=str, default="joelowtok-commits/ReelsFlow", help="GitHub repo (user/repo)")
     parser.add_argument("--gemini-key", type=str, help="Gemini API Key")
     parser.add_argument("--workdir", type=str, default="/content/OpenShorts",
                         help="Working directory")
-    args = parser.parse_args()
+    parser.add_argument("--aws-id", type=str, help="AWS Access Key ID")
+    parser.add_argument("--aws-secret", type=str, help="AWS Secret Access Key")
+    parser.add_argument("--aws-region", type=str, default="eu-west-3", help="AWS Region")
+    parser.add_argument("--aws-bucket", type=str, default="my-clips-bucket", help="AWS Private S3 Bucket")
+    parser.add_argument("--aws-public-bucket", type=str, default="my-public-bucket", help="AWS Public S3 Bucket")
+    parser.add_argument("--aws-endpoint", type=str, help="AWS S3-compatible Endpoint URL (e.g. for Cloudflare R2)")
+    args, _ = parser.parse_known_args()
 
     if args.step == "all":
         if not args.authkey:
             print("❌ --authkey es obligatorio para el setup completo")
             print("   Uso: python colab_setup.py --authkey 'tskey-auth-XXXXX' --repo 'user/ReelsFlow'")
             sys.exit(1)
-        run_all(args.authkey, args.repo, args.gemini_key)
+        run_all(args.authkey, args.repo, args.gemini_key, args.aws_id, args.aws_secret, args.aws_region, args.aws_bucket, args.aws_public_bucket, args.aws_endpoint)
 
     elif args.step == "tailscale":
         if not args.authkey:
@@ -236,4 +258,4 @@ if __name__ == "__main__":
         step_install(args.repo)
 
     elif args.step == "server":
-        step_server(args.workdir, args.gemini_key)
+        step_server(args.workdir, args.gemini_key, args.aws_id, args.aws_secret, args.aws_region, args.aws_bucket, args.aws_public_bucket, args.aws_endpoint)

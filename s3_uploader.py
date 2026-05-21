@@ -20,6 +20,7 @@ def upload_file_to_s3(file_path, bucket_name, s3_key):
     access_key = os.environ.get('AWS_ACCESS_KEY_ID')
     secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
     region = os.environ.get('AWS_REGION', 'eu-west-3')
+    endpoint_url = os.environ.get('AWS_ENDPOINT_URL')
 
     if not access_key or not secret_key:
         return False
@@ -28,7 +29,8 @@ def upload_file_to_s3(file_path, bucket_name, s3_key):
         's3',
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        region_name=region
+        region_name=region,
+        endpoint_url=endpoint_url
     )
     try:
         # Extra arguments for public read if needed, but the user didn't specify.
@@ -57,6 +59,7 @@ def get_s3_client():
     access_key = os.environ.get('AWS_ACCESS_KEY_ID')
     secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
     region = os.environ.get('AWS_REGION', 'eu-west-3')
+    endpoint_url = os.environ.get('AWS_ENDPOINT_URL')
 
     if not access_key or not secret_key:
         return None
@@ -66,6 +69,7 @@ def get_s3_client():
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         region_name=region,
+        endpoint_url=endpoint_url,
         config=Config(signature_version='s3v4')
     )
 

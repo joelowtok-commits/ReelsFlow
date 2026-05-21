@@ -2239,7 +2239,11 @@ async def saasshorts_generate(
                     )
                     if gallery_result:
                         saas_jobs[job_id]["result"]["gallery_video_id"] = gallery_result["video_id"]
-                        log_msg("📤 Uploaded to public gallery.")
+                        if gallery_result.get("video_url"):
+                            saas_jobs[job_id]["result"]["video_url"] = gallery_result["video_url"]
+                            log_msg(f"📤 Uploaded to public S3 gallery: {gallery_result['video_url']}")
+                        else:
+                            log_msg("📤 Uploaded to public gallery.")
                 except Exception as gallery_err:
                     log_msg(f"⚠️ Gallery upload skipped: {gallery_err}")
 
