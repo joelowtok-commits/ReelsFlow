@@ -1,6 +1,20 @@
 import os
 import subprocess
 
+def get_best_encoder():
+    """Detects NVENC support and returns (vcodec, encode_opts)."""
+    import subprocess
+    try:
+        enc_check = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, check=True)
+        if 'h264_nvenc' in enc_check.stdout:
+            # GPU Acceleration: h264_nvenc with slowest preset (p7) and lossless visual quality (cq 18)
+            return 'h264_nvenc', ['-preset', 'p7', '-cq', '18']
+    except Exception:
+        pass
+    # CPU Fallback: libx264 with medium preset and lossless visual quality (crf 18)
+    return 'libx264', ['-preset', 'medium', '-crf', '18']
+
+
 
 def transcribe_audio(video_path):
     """
@@ -204,14 +218,16 @@ def burn_subtitles(video_path, srt_path, output_path, alignment=2, fontsize=16,
         f"Bold=1"
     )
 
+    vcodec, encode_opts = get_best_encoder()
     cmd = [
         'ffmpeg', '-y',
         '-i', video_path,
         '-vf', f"subtitles='{safe_srt_path}':force_style='{style_string}'",
         '-c:a', 'copy',
-        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+        '-c:v', vcodec, *encode_opts,
         output_path
     ]
+
 
     print(f"🎬 Burning subtitles: {' '.join(cmd)}")
     result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)

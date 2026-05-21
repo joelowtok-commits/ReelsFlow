@@ -184,6 +184,47 @@ function App() {
     setIsSyncedPlaying(false);
   };
 
+  // ── Auto-download helper ────────────────────────────────────────────
+  const triggerAutoDownloads = async (clips, jId) => {
+    if (!clips || clips.length === 0) return;
+
+    // Build and download a .txt with all clip metadata
+    const lines = clips.map((clip, i) => [
+      `=== Clip ${i + 1} ===${clip.hook_title ? ' | Hook: ' + clip.hook_title : ''}`,
+      clip.youtube_title   ? `YouTube Title   : ${clip.youtube_title}`   : '',
+      clip.tiktok_caption  ? `TikTok Caption  : ${clip.tiktok_caption}`  : '',
+      clip.instagram_caption ? `Instagram Caption: ${clip.instagram_caption}` : '',
+      clip.description     ? `Description     : ${clip.description}`     : '',
+    ].filter(Boolean).join('\n')).join('\n\n');
+
+    const txtBlob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
+    const txtUrl  = URL.createObjectURL(txtBlob);
+    const txtA    = document.createElement('a');
+    txtA.href     = txtUrl;
+    txtA.download = `clips-info-${jId}.txt`;
+    document.body.appendChild(txtA);
+    txtA.click();
+    document.body.removeChild(txtA);
+    URL.revokeObjectURL(txtUrl);
+
+    // Small delay before starting video downloads
+    await new Promise(r => setTimeout(r, 600));
+
+    // Sequential clip downloads (800 ms gap to avoid browser popup blocking)
+    for (let i = 0; i < clips.length; i++) {
+      const clipUrl = getApiUrl(`/api/clip/${jId}/${i}`);
+      const a = document.createElement('a');
+      a.href     = clipUrl;
+      a.download = `clip-${i + 1}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (i < clips.length - 1) {
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+  };
+
   // Session Recovery: Restore on mount
   useEffect(() => {
     try {
@@ -279,6 +320,15 @@ function App() {
           if (data.status === 'completed') {
             setStatus('complete');
             clearInterval(interval);
+
+            // Auto-download if the flag was set for this job
+            const shouldAutoDownload = localStorage.getItem('auto_download_' + jobId) === 'true';
+            if (shouldAutoDownload) {
+              localStorage.removeItem('auto_download_' + jobId);
+              const clips = data.result?.clips || [];
+              // Give the UI a moment to render before firing downloads
+              setTimeout(() => triggerAutoDownloads(clips, jobId), 800);
+            }
           } else if (data.status === 'failed') {
             setStatus('error');
             const errorMsg = data.error || (data.logs && data.logs.length > 0 ? data.logs[data.logs.length - 1] : "Process failed");
@@ -336,11 +386,16 @@ function App() {
 
       if (data.type === 'url') {
         headers['Content-Type'] = 'application/json';
-        body = JSON.stringify({ url: data.payload, acknowledged: !!data.acknowledged });
+        body = JSON.stringify({
+          url: data.payload,
+          acknowledged: !!data.acknowledged,
+          auto_edit: !!data.autoEdit,
+        });
       } else {
         const formData = new FormData();
         formData.append('file', data.payload);
         formData.append('acknowledged', data.acknowledged ? 'true' : 'false');
+        formData.append('auto_edit', data.autoEdit ? 'true' : 'false');
         body = formData;
       }
 
@@ -352,6 +407,12 @@ function App() {
 
       if (!res.ok) throw new Error(await res.text());
       const resData = await res.json();
+
+      // Persist auto-download flag for this job (survives page reload)
+      if (data.autoEdit) {
+        localStorage.setItem('auto_download_' + resData.job_id, 'true');
+      }
+
       setJobId(resData.job_id);
 
     } catch (e) {

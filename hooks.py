@@ -1,6 +1,20 @@
 import os
 import textwrap
 import subprocess
+
+def get_best_encoder():
+    """Detects NVENC support and returns (vcodec, encode_opts)."""
+    import subprocess
+    try:
+        enc_check = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, check=True)
+        if 'h264_nvenc' in enc_check.stdout:
+            # GPU Acceleration: h264_nvenc with slowest preset (p7) and lossless visual quality (cq 18)
+            return 'h264_nvenc', ['-preset', 'p7', '-cq', '18']
+    except Exception:
+        pass
+    # CPU Fallback: libx264 with medium preset and lossless visual quality (crf 18)
+    return 'libx264', ['-preset', 'medium', '-crf', '18']
+
 import urllib.request
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -215,15 +229,17 @@ def add_hook_to_video(video_path, text, output_path, position="top", font_scale=
         # 4. FFmpeg Command
         print(f"🎬 Overlaying hook: '{text}' at {overlay_x},{overlay_y}")
         
+        vcodec, encode_opts = get_best_encoder()
         ffmpeg_cmd = [
             'ffmpeg', '-y',
             '-i', video_path,
             '-i', img_path,
             '-filter_complex', f"[0:v][1:v]overlay={overlay_x}:{overlay_y}",
             '-c:a', 'copy',
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '22',
+            '-c:v', vcodec, *encode_opts,
             output_path
         ]
+
         
         subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         print(f"✅ Hook added to {output_path}")

@@ -2,6 +2,20 @@ import os
 import json
 import re
 import subprocess
+
+def get_best_encoder():
+    """Detects NVENC support and returns (vcodec, encode_opts)."""
+    import subprocess
+    try:
+        enc_check = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, check=True)
+        if 'h264_nvenc' in enc_check.stdout:
+            # GPU Acceleration: h264_nvenc with slowest preset (p7) and lossless visual quality (cq 18)
+            return 'h264_nvenc', ['-preset', 'p7', '-cq', '18']
+    except Exception:
+        pass
+    # CPU Fallback: libx264 with medium preset and lossless visual quality (crf 18)
+    return 'libx264', ['-preset', 'medium', '-crf', '18']
+
 import time
 from google import genai
 from google.genai import types
@@ -9,33 +23,50 @@ from google.genai import types
 class VideoEditor:
     def __init__(self, api_key):
         self.client = genai.Client(api_key=api_key)
-        self.model_name = "gemini-3-flash-preview" 
+        self.model_name = "gemini-2.5-flash"
 
-    def upload_video(self, video_path):
-        """Uploads video to Gemini File API."""
+    def upload_video(self, video_path, max_retries=3):
+        """Uploads video to Gemini File API with retry logic."""
         print(f"📤 Uploading {video_path} to Gemini...")
-        
-        # Ensure we are passing a path that exists
+
         if not os.path.exists(video_path):
             raise FileNotFoundError(f"Video file not found: {video_path}")
-            
-        # Using 'file' keyword instead of 'path'
-        try:
-            file_upload = self.client.files.upload(file=video_path)
-        except Exception as e:
-            print(f"❌ Gemini Upload Error: {e}")
-            raise e
-        
-        # Wait for processing
-        print("⏳ Waiting for video processing by Gemini...")
-        while True:
-            file_info = self.client.files.get(name=file_upload.name)
-            if file_info.state == "ACTIVE":
-                print("✅ Video processed and ready.")
-                return file_upload
-            elif file_info.state == "FAILED":
-                raise Exception("Video processing failed by Gemini.")
-            time.sleep(2)
+
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                if attempt > 1:
+                    wait_sec = 2 ** attempt  # 4s, 8s ...
+                    print(f"🔄 Retry {attempt}/{max_retries} — waiting {wait_sec}s before re-upload...")
+                    time.sleep(wait_sec)
+
+                file_upload = self.client.files.upload(file=video_path)
+
+                # Wait for Gemini to finish processing the video
+                print("⏳ Waiting for Gemini video processing...")
+                for _ in range(60):  # max ~2 min wait
+                    file_info = self.client.files.get(name=file_upload.name)
+                    if file_info.state.name == "ACTIVE":
+                        print("✅ Video processed and ready.")
+                        # Return file_info (the live ACTIVE object), NOT file_upload
+                        # (file_upload can carry a stale resumable-upload URI which
+                        #  causes "Upload has already been terminated" on subsequent use)
+                        return file_info
+                    elif file_info.state.name == "FAILED":
+                        raise Exception("Gemini video processing failed (state=FAILED).")
+                    time.sleep(2)
+
+                raise Exception("Gemini video processing timed out after 2 minutes.")
+
+            except Exception as e:
+                last_error = e
+                print(f"❌ Gemini Upload Error (attempt {attempt}): {e}")
+                # If it's a termination / transport error, retry
+                if attempt < max_retries:
+                    continue
+                break
+
+        raise last_error
 
     def get_ffmpeg_filter(self, video_file_obj, duration, fps=30, width=None, height=None, transcript=None):
         """Asks Gemini for a raw FFmpeg filter string."""
@@ -336,14 +367,16 @@ class VideoEditor:
 
         print(f"🎬 Executing AI Filter: {filter_string}")
         
+        vcodec, encode_opts = get_best_encoder()
         cmd = [
             'ffmpeg', '-y',
             '-i', input_path,
             '-vf', filter_string,
-            '-c:v', 'libx264', '-preset', 'fast', '-crf', '22',
+            '-c:v', vcodec, *encode_opts,
             '-c:a', 'copy',
             output_path
         ]
+
         
         # Use explicit environment with UTF-8 to avoid ascii errors in subprocess
         env = os.environ.copy()

@@ -22,6 +22,20 @@ from urllib.parse import urljoin
 from typing import Optional, List, Dict, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+def get_best_encoder():
+    """Detects NVENC support and returns (vcodec, encode_opts)."""
+    import subprocess
+    try:
+        enc_check = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, check=True)
+        if 'h264_nvenc' in enc_check.stdout:
+            # GPU Acceleration: h264_nvenc with slowest preset (p7) and lossless visual quality (cq 18)
+            return 'h264_nvenc', ['-preset', 'p7', '-cq', '18']
+    except Exception:
+        pass
+    # CPU Fallback: libx264 with medium preset and lossless visual quality (crf 18)
+    return 'libx264', ['-preset', 'medium', '-crf', '18']
+
+
 
 ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1"
 FAL_QUEUE_BASE = "https://queue.fal.run"
@@ -991,6 +1005,7 @@ def generate_broll(
         f"d={total_frames}:s=1080x1920:fps={fps},"
         f"setsar=1"
     )
+    vcodec, encode_opts = get_best_encoder()
     cmd = [
         "ffmpeg", "-y",
         "-loop", "1", "-i", img_path,          # Input 0: image
@@ -998,7 +1013,7 @@ def generate_broll(
         "-vf", zoompan_filter,
         "-t", str(dur_secs),
         "-map", "0:v", "-map", "1:a",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:v", vcodec, *encode_opts,
         "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "128k",
         "-shortest",
@@ -1179,11 +1194,12 @@ def composite_video(
 
     if not broll_clips:
         # Simple: talking head + subtitles only
+        vcodec, encode_opts = get_best_encoder()
         cmd = [
             "ffmpeg", "-y",
             "-i", talking_head_path,
             "-vf", sub_filter,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-c:v", vcodec, *encode_opts,
             "-c:a", "aac", "-b:a", "128k",
             output_path,
         ]
@@ -1267,13 +1283,14 @@ def composite_video(
 
     filter_str = ";".join(filter_parts)
 
+    vcodec, encode_opts = get_best_encoder()
     cmd = [
         "ffmpeg", "-y",
         *inputs,
         "-filter_complex", filter_str,
         "-map", "[finalv]",
         "-map", "[outa]",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:v", vcodec, *encode_opts,
         "-c:a", "aac", "-b:a", "128k",
         output_path,
     ]

@@ -204,7 +204,117 @@ def enqueue_output(out, job_id):
     finally:
         out.close()
 
+def run_auto_edit_pipeline_sync(job_id: str, output_dir: str):
+    import glob
+    import json
+    import shutil
+    import os
+    import time
+    from subtitles import generate_srt, burn_subtitles
+    from hooks import add_hook_to_video
+
+    # 1. Locate metadata JSON
+    json_files = glob.glob(os.path.join(output_dir, "*_metadata.json"))
+    if not json_files:
+        print(f"⚠️ [auto-edit] No metadata file found in {output_dir}, skipping auto-edit.")
+        return
+        
+    metadata_path = json_files[0]
+    try:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"❌ [auto-edit] Failed to read metadata file: {e}")
+        return
+        
+    transcript = data.get('transcript')
+    clips = data.get('shorts', [])
+    if not transcript or not clips:
+        print("⚠️ [auto-edit] Missing transcript or clips in metadata, skipping.")
+        return
+        
+    base_name = os.path.basename(metadata_path).replace('_metadata.json', '')
+    
+    # 2. Iterate through clips
+    for i, clip in enumerate(clips):
+        clip_filename = f"{base_name}_clip_{i+1}.mp4"
+        input_path = os.path.join(output_dir, clip_filename)
+        
+        if not os.path.exists(input_path):
+            print(f"⚠️ [auto-edit] Clip file {clip_filename} not found, skipping.")
+            continue
+            
+        print(f"🤖 [auto-edit] Processing clip {i+1}/{len(clips)}: {clip_filename}")
+        
+        # Subtitles (middle)
+        subtitled_path = None
+        srt_path = os.path.join(output_dir, f"temp_auto_subs_{i}_{int(time.time())}.srt")
+        try:
+            # Generate SRT
+            success = generate_srt(transcript, clip['start'], clip['end'], srt_path)
+            if success and os.path.exists(srt_path):
+                temp_out = os.path.join(output_dir, f"temp_auto_subs_{clip_filename}")
+                print(f"🤖 [auto-edit] Burning subtitles in the middle...")
+                # position="middle" uses ass_alignment=10 in subtitles.py
+                burn_subtitles(
+                    input_path, srt_path, temp_out,
+                    alignment="middle", fontsize=24, font_name="Verdana",
+                    font_color="#FFFFFF", border_color="#000000", border_width=2,
+                    bg_color="#000000", bg_opacity=0.0
+                )
+                if os.path.exists(temp_out):
+                    subtitled_path = temp_out
+        except Exception as e:
+            print(f"❌ [auto-edit] Failed to burn subtitles: {e}")
+        finally:
+            if os.path.exists(srt_path):
+                try: os.remove(srt_path)
+                except Exception: pass
+                
+        # Hook (top)
+        hook_text = clip.get('viral_hook_text')
+        source_path = subtitled_path if subtitled_path else input_path
+        final_edited_path = None
+        
+        if hook_text:
+            try:
+                temp_out = os.path.join(output_dir, f"temp_auto_hook_{clip_filename}")
+                print(f"🤖 [auto-edit] Overlaying hook text at the top: '{hook_text}'")
+                add_hook_to_video(
+                    source_path, hook_text, temp_out,
+                    position="top", font_scale=1.0
+                )
+                if os.path.exists(temp_out):
+                    final_edited_path = temp_out
+            except Exception as e:
+                print(f"❌ [auto-edit] Failed to add hook: {e}")
+                
+        # Move final file to original clip path to keep URLs valid
+        source_to_overwrite = final_edited_path or subtitled_path
+        if source_to_overwrite:
+            try:
+                if os.path.exists(input_path):
+                    os.remove(input_path)
+                shutil.move(source_to_overwrite, input_path)
+                print(f"✅ [auto-edit] Overwrote original clip with edited version: {input_path}")
+            except Exception as e:
+                print(f"❌ [auto-edit] Failed to overwrite original clip: {e}")
+                
+        # Cleanup temporary files
+        if subtitled_path and os.path.exists(subtitled_path):
+            try: os.remove(subtitled_path)
+            except Exception: pass
+        if final_edited_path and os.path.exists(final_edited_path):
+            try: os.remove(final_edited_path)
+            except Exception: pass
+
+async def run_auto_edit_pipeline(job_id: str, output_dir: str):
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, run_auto_edit_pipeline_sync, job_id, output_dir)
+
 async def run_job(job_id, job_data):
+
     """Executes the subprocess for a specific job."""
     
     cmd = job_data['cmd']
@@ -272,12 +382,23 @@ async def run_job(job_id, job_data):
         returncode = process.returncode
         
         if returncode == 0:
+            # Run auto-edit pipeline if enabled
+            if job_data.get('auto_edit'):
+                jobs[job_id]['logs'].append("🤖 Starting Auto-Editing pipeline...")
+                try:
+                    await run_auto_edit_pipeline(job_id, output_dir)
+                    jobs[job_id]['logs'].append("🤖 Auto-Editing complete!")
+                except Exception as ae_err:
+                    jobs[job_id]['logs'].append(f"⚠️ Auto-Editing failed: {str(ae_err)}")
+                    print(f"❌ [auto-edit] failed for job {job_id}: {ae_err}")
+
             jobs[job_id]['status'] = 'completed'
             jobs[job_id]['logs'].append("Process finished successfully.")
             
             # Start S3 upload in background (silent, non-blocking)
             loop = asyncio.get_event_loop()
             loop.run_in_executor(None, upload_job_artifacts, output_dir, job_id)
+
             
             # Find result JSON
             json_files = glob.glob(os.path.join(output_dir, "*_metadata.json"))
@@ -358,13 +479,16 @@ async def process_endpoint(
     request: Request,
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
-    acknowledged: Optional[str] = Form(None)
+    acknowledged: Optional[str] = Form(None),
+    output_format: Optional[str] = Form(None),
+    auto_edit: Optional[str] = Form(None)
 ):
     api_key = request.headers.get("X-Gemini-Key")
     if not api_key:
         raise HTTPException(status_code=400, detail="Missing X-Gemini-Key header")
 
     ack_flag = str(acknowledged).lower() in ("1", "true", "yes")
+    auto_edit_flag = str(auto_edit).lower() in ("1", "true", "yes")
 
     # Handle JSON body manually for URL payload
     content_type = request.headers.get("content-type", "")
@@ -372,6 +496,20 @@ async def process_endpoint(
         body = await request.json()
         url = body.get("url")
         ack_flag = bool(body.get("acknowledged"))
+        output_format = body.get("output_format", output_format)
+        auto_edit_flag = bool(body.get("auto_edit", False))
+
+    # Handle JSON body manually for URL payload
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        body = await request.json()
+        url = body.get("url")
+        ack_flag = bool(body.get("acknowledged"))
+        output_format = body.get("output_format", output_format)
+
+    # Validate output_format (defaults to 'vertical')
+    if output_format not in ("vertical", "original"):
+        output_format = "vertical"
 
     if not url and not file:
         raise HTTPException(status_code=400, detail="Must provide URL or File")
@@ -427,6 +565,7 @@ async def process_endpoint(
         cmd.extend(["-i", input_path])
 
     cmd.extend(["-o", job_output_dir])
+    cmd.extend(["--format", output_format])  # 'vertical' or 'original'
 
     print(f"[attestation] job={job_id} ip={attestation['ip']} source={attestation['source']} ack=true")
 
@@ -437,7 +576,8 @@ async def process_endpoint(
         'cmd': cmd,
         'env': env,
         'output_dir': job_output_dir,
-        'attestation': attestation
+        'attestation': attestation,
+        'auto_edit': auto_edit_flag
     }
 
     await job_queue.put(job_id)
@@ -650,6 +790,47 @@ async def get_clip_transcript(job_id: str, clip_index: int):
         "durationSec": duration_sec,
         "language": transcript.get('language', 'en'),
     }
+
+
+@app.get("/api/clip/{job_id}/{clip_index}")
+async def get_clip_file(job_id: str, clip_index: int):
+    """Serve/download the actual MP4 file of the clip."""
+    if job_id not in jobs:
+        # Fallback: check if directory exists even if server restarted
+        output_dir = os.path.join(OUTPUT_DIR, job_id)
+        if not os.path.exists(output_dir):
+            raise HTTPException(status_code=404, detail="Job not found")
+    else:
+        output_dir = os.path.join(OUTPUT_DIR, job_id)
+
+    json_files = glob.glob(os.path.join(output_dir, "*_metadata.json"))
+    if not json_files:
+        raise HTTPException(status_code=404, detail="Metadata not found")
+
+    with open(json_files[0], 'r') as f:
+        data = json.load(f)
+
+    clips = data.get('shorts', [])
+    if clip_index >= len(clips):
+        raise HTTPException(status_code=404, detail="Clip not found")
+
+    clip_data = clips[clip_index]
+    video_url = clip_data.get('video_url', '')
+    if not video_url:
+        raise HTTPException(status_code=404, detail="Video URL not found in metadata")
+
+    filename = os.path.basename(video_url)
+    file_path = os.path.join(output_dir, filename)
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        file_path,
+        media_type="video/mp4",
+        filename=filename
+    )
 
 
 # --- Remotion Render Proxy ---

@@ -32,6 +32,23 @@ load_dotenv()
 # --- Constants ---
 ASPECT_RATIO = 9 / 16
 
+# Output format: 'vertical' (9:16 crop) or 'original' (keep original aspect ratio)
+OUTPUT_FORMAT = 'vertical'
+
+def get_best_encoder():
+    """Detects NVENC support and returns (vcodec, encode_opts)."""
+    import subprocess
+    try:
+        enc_check = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, check=True)
+        if 'h264_nvenc' in enc_check.stdout:
+            # GPU Acceleration: h264_nvenc with slowest preset (p7) and lossless visual quality (cq 18)
+            return 'h264_nvenc', ['-preset', 'p7', '-cq', '18']
+    except Exception:
+        pass
+    # CPU Fallback: libx264 with medium preset and lossless visual quality (crf 18)
+    return 'libx264', ['-preset', 'medium', '-crf', '18']
+
+
 GEMINI_PROMPT_TEMPLATE = """
 You are a senior short-form video editor. Read the ENTIRE transcript and word-level timestamps to choose the 3–15 MOST VIRAL moments for TikTok/IG Reels/YouTube Shorts. Each clip must be between 15 and 60 seconds long.
 
@@ -576,6 +593,38 @@ Technical Details: {str(e)}
     
     return downloaded_file, sanitized_title
 
+def process_video_to_original(input_video, final_output_video):
+    """
+    Re-encode clip keeping its original aspect ratio.
+    No crop, no face tracking — just clean re-encode.
+    """
+    print(f"🎬 Processing clip (original ratio): {input_video}")
+    
+    # Auto-detect NVENC for GPU-accelerated encoding
+    vcodec, encode_opts = get_best_encoder()
+    if vcodec == 'h264_nvenc':
+        print("   ⚡ Using NVENC GPU encoding")
+
+
+    cmd = [
+        'ffmpeg', '-y',
+        '-i', input_video,
+        '-c:v', vcodec, *encode_opts,
+        '-c:a', 'aac',
+        # Ensure width/height are divisible by 2 (required by most codecs)
+        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        final_output_video
+    ]
+
+    result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        print(f"   ❌ FFmpeg failed: {result.stderr.decode()}")
+        return False
+
+    print(f"   ✅ Clip saved (original ratio): {final_output_video}")
+    return True
+
+
 def process_video_to_vertical(input_video, final_output_video):
     """
     Core logic to convert horizontal video to vertical using scene detection and Active Speaker Tracking (MediaPipe).
@@ -626,16 +675,10 @@ def process_video_to_vertical(input_video, final_output_video):
     print("\n   ✂️ Step 4: Processing video frames...")
     
     # Auto-detect NVENC for GPU-accelerated encoding
-    vcodec = 'libx264'
-    encode_opts = ['-preset', 'fast', '-crf', '23']
-    try:
-        enc_check = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True)
-        if 'h264_nvenc' in enc_check.stdout:
-            vcodec = 'h264_nvenc'
-            encode_opts = ['-preset', 'fast', '-cq', '23']
-            print("   ⚡ Using NVENC GPU encoding")
-    except Exception:
-        pass
+    vcodec, encode_opts = get_best_encoder()
+    if vcodec == 'h264_nvenc':
+        print("   ⚡ Using NVENC GPU encoding")
+
 
     command = [
         'ffmpeg', '-y', '-f', 'rawvideo', '-vcodec', 'rawvideo',
@@ -923,8 +966,15 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--output', type=str, help="Output directory or file (if processing whole video).")
     parser.add_argument('--keep-original', action='store_true', help="Keep the downloaded YouTube video.")
     parser.add_argument('--skip-analysis', action='store_true', help="Skip AI analysis and convert the whole video.")
+    parser.add_argument('--format', type=str, default='vertical', choices=['vertical', 'original'],
+                        help="Output format: 'vertical' (9:16 crop+track, default) or 'original' (keep original aspect ratio).")
     
     args = parser.parse_args()
+
+    # Apply output format globally
+    global OUTPUT_FORMAT
+    OUTPUT_FORMAT = args.format
+    print(f"📐 Output format: {OUTPUT_FORMAT}")
 
     script_start_time = time.time()
     
@@ -974,7 +1024,10 @@ if __name__ == '__main__':
     if args.skip_analysis:
         print("⏩ Skipping analysis, processing entire video...")
         output_file = args.output if args.output else os.path.join(output_dir, f"{video_title}_vertical.mp4")
-        process_video_to_vertical(input_video, output_file)
+        if OUTPUT_FORMAT == 'original':
+            process_video_to_original(input_video, output_file)
+        else:
+            process_video_to_vertical(input_video, output_file)
     else:
         # 3. Transcribe
         transcript = transcribe_video(input_video)
@@ -1017,19 +1070,25 @@ if __name__ == '__main__':
                 
                 # ffmpeg cut
                 # Using re-encoding for precision as requested by strict seconds
+                vcodec, encode_opts = get_best_encoder()
                 cut_command = [
                     'ffmpeg', '-y', 
                     '-ss', str(start), 
                     '-to', str(end), 
                     '-i', input_video,
-                    '-c:v', 'libx264', '-crf', '18', '-preset', 'fast',
+                    '-c:v', vcodec, *encode_opts,
                     '-c:a', 'aac',
                     clip_temp_path
                 ]
                 subprocess.run(cut_command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
                 
-                # Process vertical
-                success = process_video_to_vertical(clip_temp_path, clip_final_path)
+                # Process clip according to selected output format
+                if OUTPUT_FORMAT == 'original':
+                    # Keep original aspect ratio — just re-encode the cut
+                    success = process_video_to_original(clip_temp_path, clip_final_path)
+                else:
+                    # Default: crop + face-track to 9:16 vertical
+                    success = process_video_to_vertical(clip_temp_path, clip_final_path)
                 
                 if success:
                     print(f"   ✅ Clip {i+1} ready: {clip_final_path}")
