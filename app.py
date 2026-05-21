@@ -474,6 +474,37 @@ async def system_info():
 async def get_config():
     return {"youtubeUrlEnabled": not DISABLE_YOUTUBE_URL}
 
+
+@app.get("/api/jobs")
+async def get_all_jobs():
+    """Return all active jobs and their status/results for synchronization."""
+    return {
+        job_id: {
+            "status": job_data.get("status"),
+            "result": job_data.get("result"),
+            "error": job_data.get("error")
+        }
+        for job_id, job_data in jobs.items()
+    }
+
+
+@app.get("/api/sync/{job_id}/files")
+async def list_job_files(job_id: str):
+    """List all file names and sizes in the job's output directory for syncing."""
+    output_dir = os.path.join(OUTPUT_DIR, job_id)
+    if not os.path.exists(output_dir):
+        raise HTTPException(status_code=404, detail="Job directory not found")
+
+    files = []
+    for filename in os.listdir(output_dir):
+        file_path = os.path.join(output_dir, filename)
+        if os.path.isfile(file_path):
+            files.append({
+                "name": filename,
+                "size": os.path.getsize(file_path)
+            })
+    return {"files": files}
+
 @app.post("/api/process")
 async def process_endpoint(
     request: Request,

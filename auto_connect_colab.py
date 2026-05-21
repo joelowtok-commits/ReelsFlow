@@ -68,6 +68,117 @@ def verify_backend(ip):
         return None
 
 
+def sync_worker(gpu_ip):
+    """Background worker to automatically sync completed jobs from Colab to Windows local output/."""
+    import time
+    import urllib.request
+    import urllib.error
+    
+    local_output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+    os.makedirs(local_output_dir, exist_ok=True)
+    
+    synced_jobs_file = os.path.join(local_output_dir, "synced_jobs.json")
+    synced_jobs = set()
+    if os.path.exists(synced_jobs_file):
+        try:
+            with open(synced_jobs_file, "r") as f:
+                synced_jobs = set(json.load(f))
+        except Exception:
+            pass
+
+    print(f"\n🔄 [Sync Daemon] Sistema de auto-sincronización iniciado por Tailscale.")
+    print(f"🔄 [Sync Daemon] Escuchando servidor en http://{gpu_ip}:8000 ...")
+
+    while True:
+        try:
+            time.sleep(5)
+            # 1. Fetch active jobs from Colab
+            url = f"http://{gpu_ip}:8000/api/jobs"
+            req = urllib.request.Request(url, method='GET')
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                remote_jobs = json.loads(resp.read().decode())
+            
+            for job_id, job_info in remote_jobs.items():
+                status = job_info.get("status")
+                if status in ("complete", "completed") and job_id not in synced_jobs:
+                    print(f"\n⚡ [Sync] ¡Nuevo job completado detectado en Colab! ID: {job_id}")
+                    
+                    # Create local folder for this job
+                    job_folder = os.path.join(local_output_dir, job_id)
+                    os.makedirs(job_folder, exist_ok=True)
+                    
+                    # 2. Get the list of all files for this job from Colab
+                    files_url = f"http://{gpu_ip}:8000/api/sync/{job_id}/files"
+                    files_req = urllib.request.Request(files_url, method='GET')
+                    
+                    try:
+                        with urllib.request.urlopen(files_req, timeout=5) as files_resp:
+                            files_data = json.loads(files_resp.read().decode())
+                            files_to_download = files_data.get("files", [])
+                    except urllib.error.HTTPError as e:
+                        print(f"❌ [Sync] Error obteniendo lista de archivos para {job_id}: {e}")
+                        continue
+                    
+                    # 3. Download each file
+                    success_sync = True
+                    for file_info in files_to_download:
+                        filename = file_info["name"]
+                        expected_size = file_info["size"]
+                        
+                        local_file_path = os.path.join(job_folder, filename)
+                        
+                        # If file already exists and has the correct size, skip download
+                        if os.path.exists(local_file_path) and os.path.getsize(local_file_path) == expected_size:
+                            continue
+                            
+                        download_url = f"http://{gpu_ip}:8000/videos/{job_id}/{filename}"
+                        print(f"📥 [Sync] Descargando {filename} ({round(expected_size/(1024*1024), 2)} MB)...")
+                        
+                        try:
+                            # Direct stream download to file
+                            urllib.request.urlretrieve(download_url, local_file_path)
+                        except Exception as e:
+                            print(f"❌ [Sync] Error descargando {filename}: {e}")
+                            success_sync = False
+                            break
+                    
+                    # 4. Generate the TXT metadata info file locally on Windows!
+                    if success_sync:
+                        clips = job_info.get("result", {}).get("clips", [])
+                        if clips:
+                            txt_lines = []
+                            for i, clip in enumerate(clips):
+                                txt_lines.append(f"=== Clip {i + 1} ==={ ' | Hook: ' + clip.get('hook_title') if clip.get('hook_title') else '' }")
+                                if clip.get("youtube_title"):
+                                    txt_lines.append(f"YouTube Title   : {clip['youtube_title']}")
+                                if clip.get("tiktok_caption"):
+                                    txt_lines.append(f"TikTok Caption  : {clip['tiktok_caption']}")
+                                if clip.get("instagram_caption"):
+                                    txt_lines.append(f"Instagram Caption: {clip['instagram_caption']}")
+                                if clip.get("description"):
+                                    txt_lines.append(f"Description     : {clip['description']}")
+                                txt_lines.append("")
+                            
+                            txt_content = "\n".join(txt_lines)
+                            txt_filename = f"clips-info-{job_id}.txt"
+                            with open(os.path.join(job_folder, txt_filename), "w", encoding="utf-8") as txt_f:
+                                txt_f.write(txt_content)
+                            print(f"📝 [Sync] Guardado archivo de metadata: {txt_filename}")
+                            
+                        # Add to synced jobs and save list
+                        synced_jobs.add(job_id)
+                        try:
+                            with open(synced_jobs_file, "w") as f:
+                                json.dump(list(synced_jobs), f)
+                            print(f"✅ [Sync] Job {job_id} sincronizado completamente y guardado en disco.")
+                        except Exception as e:
+                            print(f"⚠️ [Sync] Error guardando estado de sincronización: {e}")
+                            
+        except Exception as e:
+            # Silence general errors and retry
+            pass
+
+
 def main():
     print("=" * 60)
     print("🔍 OpenShorts — Auto Connect Colab GPU")
@@ -125,6 +236,11 @@ def main():
         print(f"   🧠 CPU Cores: {cores}")
         print(f"   💾 RAM: {ram} GB")
         print(f"   🎮 GPU: {gpu}")
+        
+        # Start background sync daemon!
+        import threading
+        t = threading.Thread(target=sync_worker, args=(gpu_ip,), daemon=True)
+        t.start()
     else:
         print(f"   ⚠️  Backend no responde aún. Puede estar arrancando...")
         print(f"   💡 Esperá 1-2 minutos y volvé a intentar.")
