@@ -359,10 +359,11 @@ def main():
     print(f"   $env:VITE_BACKEND_URL='http://{gpu_ip}:8000'; npm run dev")
     print(f"\n{'=' * 60}")
 
-    # 5. Ask if user wants to launch automatically
-    try:
-        answer = input("\n¿Lanzar el dashboard ahora? (s/n): ").strip().lower()
-        if answer in ('s', 'si', 'y', 'yes', ''):
+# 5. Ask if user wants to launch automatically (default: yes)
+try:
+answer = input("\n¿Lanzar el dashboard ahora? (s/n) [por defecto: s]: ").strip().lower()
+# Acepta vacío, 's', 'si', 'y', 'yes' como afirmativo
+if answer in ('', 's', 'si', 'y', 'yes'):
             print(f"\n🚀 Lanzando dashboard apuntando a Colab GPU...")
             dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
             env = os.environ.copy()
