@@ -431,20 +431,40 @@ def list_video_gallery(limit=50, force_refresh=False):
     return videos[:limit] if limit else videos
 
 
-def upload_job_artifacts(directory, job_id):
+def upload_job_artifacts(directory, job_id, job_progress_dict=None):
     """
     Upload all generated clips and metadata for a job to S3.
+    
+    Args:
+        directory: Output directory containing the files
+        job_id: Job identifier
+        job_progress_dict: Optional dict to update with progress
     """
     bucket_name = os.environ.get('AWS_S3_BUCKET', 'my-clips-bucket')
-    
+
     if not os.path.exists(directory):
         return
 
-    for filename in os.listdir(directory):
-        # Upload .mp4 clips and the metadata JSON
-        if (filename.endswith(".mp4") or filename.endswith(".json")) and not filename.startswith("temp_"):
-            file_path = os.path.join(directory, filename)
-            s3_key = f"{job_id}/{filename}"
-            upload_file_to_s3(file_path, bucket_name, s3_key)
+    # Get list of files to upload
+    files_to_upload = [
+        f for f in os.listdir(directory)
+        if (f.endswith(".mp4") or f.endswith(".json")) and not f.startswith("temp_")
+    ]
+    
+    total_files = len(files_to_upload)
+    
+    for i, filename in enumerate(files_to_upload):
+        file_path = os.path.join(directory, filename)
+        s3_key = f"{job_id}/{filename}"
+        
+        # Update progress if dict provided
+        if job_progress_dict and job_id in job_progress_dict:
+            job_progress_dict[job_id]['current_file'] = filename
+            job_progress_dict[job_id]['files_completed'] = i + 1
+            job_progress_dict[job_id]['files_total'] = total_files
+            job_progress_dict[job_id]['progress_percent'] = 40 + int(30 * (i + 1) / total_files)
+            job_progress_dict[job_id]['message'] = f'Subiendo {filename}...'
+        
+        upload_file_to_s3(file_path, bucket_name, s3_key)
 
 

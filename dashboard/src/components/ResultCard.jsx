@@ -7,48 +7,62 @@ import TranslateModal from './TranslateModal';
 import { renderInBrowser } from '../lib/renderInBrowser';
 
 export default function ResultCard({ clip, index, jobId, uploadPostKey, uploadUserId, geminiApiKey, elevenLabsKey, onPlay, onPause }) {
-    const [showModal, setShowModal] = useState(false);
-    const [showSubtitleModal, setShowSubtitleModal] = useState(false);
-    const videoRef = React.useRef(null);
-    const originalVideoUrl = getApiUrl(clip.video_url); // Never changes — used for Remotion previews
-    const [currentVideoUrl, setCurrentVideoUrl] = useState(originalVideoUrl);
+const [showModal, setShowModal] = useState(false);
+const [showSubtitleModal, setShowSubtitleModal] = useState(false);
+const videoRef = React.useRef(null);
+const originalVideoUrl = getApiUrl(clip.video_url);
+const [currentVideoUrl, setCurrentVideoUrl] = useState(originalVideoUrl);
+const [platforms, setPlatforms] = useState({ tiktok: true, instagram: true, youtube: true });
+const [postTitle, setPostTitle] = useState("");
+const [postDescription, setPostDescription] = useState("");
+const [isScheduling, setIsScheduling] = useState(false);
+const [scheduleDate, setScheduleDate] = useState("");
+const [posting, setPosting] = useState(false);
+const [postResult, setPostResult] = useState(null);
+const [isEditing, setIsEditing] = useState(false);
+const [isSubtitling, setIsSubtitling] = useState(false);
+const [isHooking, setIsHooking] = useState(false);
+const [isTranslating, setIsTranslating] = useState(false);
+const [showHookModal, setShowHookModal] = useState(false);
+const [showTranslateModal, setShowTranslateModal] = useState(false);
+const [editError, setEditError] = useState(null);
+const [clipDuration, setClipDuration] = useState(clip.end && clip.start ? clip.end - clip.start : 30);
 
-    const [platforms, setPlatforms] = useState({
-        tiktok: true,
-        instagram: true,
-        youtube: true
-    });
-    const [postTitle, setPostTitle] = useState("");
-    const [postDescription, setPostDescription] = useState("");
-    const [isScheduling, setIsScheduling] = useState(false);
-    const [scheduleDate, setScheduleDate] = useState("");
+// Progress state for real-time sync
+const [progress, setProgress] = useState({ status: 'processing', progress_percent: 0, message: 'Procesando...' });
 
-    const [posting, setPosting] = useState(false);
-    const [postResult, setPostResult] = useState(null);
+// Poll job progress from backend
+useEffect(() => {
+if (!jobId || clip.status === 'ready') return;
 
-    const [isEditing, setIsEditing] = useState(false);
-    const [isSubtitling, setIsSubtitling] = useState(false);
-    const [isHooking, setIsHooking] = useState(false);
-    const [isTranslating, setIsTranslating] = useState(false);
-    const [showHookModal, setShowHookModal] = useState(false);
-    const [showTranslateModal, setShowTranslateModal] = useState(false);
-    const [editError, setEditError] = useState(null);
+const pollProgress = async () => {
+try {
+const res = await fetch(getApiUrl(`/api/jobs/${jobId}/progress`));
+if (res.ok) {
+const data = await res.json();
+setProgress(data);
+}
+} catch (e) {}
+};
 
-    const [clipDuration, setClipDuration] = useState(clip.end && clip.start ? clip.end - clip.start : 30);
+pollProgress();
+const interval = setInterval(pollProgress, 2000);
+return () => clearInterval(interval);
+}, [jobId, clip.status]);
 
-    // Accumulate Remotion layers across operations
-    const [activeLayers, setActiveLayers] = useState({ subtitles: null, hook: null, effects: null });
+// Accumulate Remotion layers across operations
+const [activeLayers, setActiveLayers] = useState({ subtitles: null, hook: null, effects: null });
 
-    // Fetch clip duration from transcript endpoint
-    useEffect(() => {
-        if (!jobId || index === undefined) return;
-        fetch(getApiUrl(`/api/clip/${jobId}/${index}/transcript`))
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-                if (data && data.durationSec) setClipDuration(data.durationSec);
-            })
-            .catch(() => {});
-    }, [jobId, index]);
+// Fetch clip duration from transcript endpoint
+useEffect(() => {
+if (!jobId || index === undefined) return;
+fetch(getApiUrl(`/api/clip/${jobId}/${index}/transcript`))
+.then(res => res.ok ? res.json() : null)
+.then(data => {
+if (data && data.durationSec) setClipDuration(data.durationSec);
+})
+.catch(() => {});
+}, [jobId, index]);
 
     // Initialize/Reset form when modal opens
     useEffect(() => {
@@ -410,15 +424,42 @@ export default function ResultCard({ clip, index, jobId, uploadPostKey, uploadUs
                     </span>
                 </div>
 
-                {/* Auto Edit Overlay if Processing */}
-                {isEditing && (
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-10 p-4 text-center">
-                        <Loader2 size={32} className="text-primary animate-spin mb-3" />
-                        <span className="text-xs font-bold text-white uppercase tracking-wider">AI Magic in Progress...</span>
-                        <span className="text-[10px] text-zinc-400 mt-1">Applying viral edits & zooms</span>
-                    </div>
-                )}
-            </div>
+{/* Auto Edit Overlay if Processing */}
+{isEditing && (
+<div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-10 p-4 text-center">
+<Loader2 size={32} className="text-primary animate-spin mb-3" />
+<span className="text-xs font-bold text-white uppercase tracking-wider">AI Magic in Progress...</span>
+<span className="text-[10px] text-zinc-400 mt-1">Applying viral edits & zooms</span>
+</div>
+)}
+
+{/* Progress Bar Overlay for Sync/Upload */}
+{clip.status !== 'ready' && progress.progress_percent > 0 && progress.progress_percent < 100 && (
+<div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 p-4 text-center">
+<div className="w-full max-w-xs">
+<div className="flex items-center justify-center gap-2 mb-3">
+<Loader2 size={20} className="text-primary animate-spin" />
+<span className="text-xs font-bold text-white uppercase tracking-wider">{progress.message || 'Procesando...'}</span>
+</div>
+<div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+<div
+className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full transition-all duration-300"
+style={{ width: `${Math.min(100, progress.progress_percent)}%` }}
+/>
+</div>
+<div className="flex justify-between mt-2 text-[10px] text-zinc-400">
+<span>{progress.current_file ? `Archivo: ${progress.current_file}` : 'Iniciando...'}</span>
+<span>{Math.round(progress.progress_percent)}%</span>
+</div>
+{progress.files_total > 0 && (
+<div className="text-[10px] text-zinc-500 mt-1">
+{progress.files_completed || 0}/{progress.files_total} archivos
+</div>
+)}
+</div>
+</div>
+)}
+</div>
 
             {/* Right: Content & Details */}
             <div className="flex-1 p-4 md:p-5 flex flex-col bg-[#121214] overflow-hidden min-w-0">

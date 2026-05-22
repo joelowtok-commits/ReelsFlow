@@ -36,8 +36,9 @@ DISABLE_YOUTUBE_URL = os.environ.get("DISABLE_YOUTUBE_URL", "false").lower() in 
 # Application State
 job_queue = asyncio.Queue()
 jobs: Dict[str, Dict] = {}
+job_progress: Dict[str, Dict] = {}  # {job_id: {status, progress_percent, current_file, files_total, files_completed}}
 thumbnail_sessions: Dict[str, Dict] = {}
-publish_jobs: Dict[str, Dict] = {}  # {publish_id: {status, result, error}}
+publish_jobs: Dict[str, Dict] = {} # {publish_id: {status, result, error}}
 # Semester to limit concurrency to MAX_CONCURRENT_JOBS
 concurrency_semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 
@@ -395,9 +396,14 @@ async def run_job(job_id, job_data):
             jobs[job_id]['status'] = 'completed'
             jobs[job_id]['logs'].append("Process finished successfully.")
             
+            # Update progress: processing complete, starting S3 upload
+            if job_id in job_progress:
+                job_progress[job_id]['progress_percent'] = 40
+                job_progress[job_id]['message'] = 'Procesamiento completado, subiendo a S3...'
+            
             # Start S3 upload in background (silent, non-blocking)
             loop = asyncio.get_event_loop()
-            loop.run_in_executor(None, upload_job_artifacts, output_dir, job_id)
+            loop.run_in_executor(None, upload_job_artifacts, output_dir, job_id, job_progress)
 
             
             # Find result JSON
@@ -505,6 +511,26 @@ async def list_job_files(job_id: str):
             })
     return {"files": files}
 
+
+@app.get("/api/jobs/{job_id}/progress")
+async def get_job_progress(job_id: str):
+    """Get current job progress for real-time UI updates."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    progress = job_progress.get(job_id, {})
+    job_data = jobs[job_id]
+    
+    return {
+        "job_id": job_id,
+        "status": job_data.get("status", "unknown"),
+        "progress_percent": progress.get("progress_percent", 0),
+        "current_file": progress.get("current_file", ""),
+        "files_total": progress.get("files_total", 0),
+        "files_completed": progress.get("files_completed", 0),
+        "message": progress.get("message", "")
+    }
+
 @app.post("/api/process")
 async def process_endpoint(
     request: Request,
@@ -609,6 +635,16 @@ async def process_endpoint(
         'output_dir': job_output_dir,
         'attestation': attestation,
         'auto_edit': auto_edit_flag
+    }
+    
+    # Initialize progress tracking
+    job_progress[job_id] = {
+        'status': 'queued',
+        'progress_percent': 0,
+        'current_file': '',
+        'files_total': 0,
+        'files_completed': 0,
+        'message': 'Job en cola...'
     }
 
     await job_queue.put(job_id)
