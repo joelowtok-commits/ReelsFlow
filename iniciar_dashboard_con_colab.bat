@@ -10,7 +10,7 @@ echo configurara tu dashboard para procesar alli, y lo iniciara.
 echo.
 echo.
 cd /d "%~dp0"
-echo s | python auto_connect_colab.py
+python auto_connect_colab.py --auto
 if %ERRORLEVEL% NEQ 0 (
 echo.
 echo [ERROR] Hubo un problema al conectar. Asegurate de que:
@@ -18,3 +18,4 @@ echo 1. Tu Google Colab este encendido y ejecutando el script.
 echo 2. Tengas Tailscale abierto y conectado en tu Windows.
 echo.
 )
+pause

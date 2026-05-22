@@ -359,23 +359,38 @@ def main():
     print(f"   $env:VITE_BACKEND_URL='http://{gpu_ip}:8000'; npm run dev")
     print(f"\n{'=' * 60}")
 
-# 5. Ask if user wants to launch automatically (default: yes)
+# 5. Check for --auto flag or ask user
+import sys
+auto_launch = '--auto' in sys.argv or '-a' in sys.argv
+
+if auto_launch:
+print(f"\n🚀 Modo automático: Lanzando dashboard apuntando a Colab GPU...")
+dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
+env = os.environ.copy()
+env["VITE_BACKEND_URL"] = f"http://{gpu_ip}:8000"
+subprocess.run(
+["npm", "run", "dev"],
+cwd=dashboard_dir,
+env=env,
+shell=True
+)
+else:
 try:
 answer = input("\n¿Lanzar el dashboard ahora? (s/n) [por defecto: s]: ").strip().lower()
 # Acepta vacío, 's', 'si', 'y', 'yes' como afirmativo
 if answer in ('', 's', 'si', 'y', 'yes'):
-            print(f"\n🚀 Lanzando dashboard apuntando a Colab GPU...")
-            dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
-            env = os.environ.copy()
-            env["VITE_BACKEND_URL"] = f"http://{gpu_ip}:8000"
-            subprocess.run(
-                ["npm", "run", "dev"],
-                cwd=dashboard_dir,
-                env=env,
-                shell=True
-            )
-    except KeyboardInterrupt:
-        print("\n\n👋 Cancelado. Usá los comandos de arriba para lanzar manualmente.")
+print(f"\n🚀 Lanzando dashboard apuntando a Colab GPU...")
+dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
+env = os.environ.copy()
+env["VITE_BACKEND_URL"] = f"http://{gpu_ip}:8000"
+subprocess.run(
+["npm", "run", "dev"],
+cwd=dashboard_dir,
+env=env,
+shell=True
+)
+except KeyboardInterrupt:
+print("\n\n👋 Cancelado. Usá los comandos de arriba para lanzar manualmente.")
 
 
 if __name__ == "__main__":
