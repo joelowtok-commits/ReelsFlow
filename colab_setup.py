@@ -8,6 +8,7 @@ Instrucciones:
      !bash ReelsFlow/colab_install.sh
      
   3. Ejecuta el servidor:
+  
      !python ReelsFlow/colab_setup.py --authkey "tskey-auth-XXXXX" --repo "joelowtok-commits/ReelsFlow"
 """
 

@@ -13,7 +13,7 @@ import { getApiUrl } from './config';
 
 // Enhanced "Encryption" using XOR + Base64 with a Salt
 // This is better than plain Base64 but still client-side.
-const SECRET_KEY = import.meta.env.VITE_ENCRYPTION_KEY || "OpenShorts-Static-Salt-Change-Me";
+const SECRET_KEY = import.meta.env.VITE_ENCRYPTION_KEY || "ReelsFlow-Static-Salt-Change-Me";
 const ENCRYPTION_PREFIX = "ENC:";
 
 const encrypt = (text) => {
@@ -123,7 +123,7 @@ const UserProfileSelector = ({ profiles, selectedUserId, onSelect }) => {
   );
 };
 
-const SESSION_KEY = 'openshorts_session';
+const SESSION_KEY = 'reelsflow_session';
 const SESSION_MAX_AGE = 3600000; // 1 hour (matches server job retention)
 
 // Mock polling function
@@ -436,9 +436,9 @@ function App() {
     <div className="w-20 lg:w-64 bg-surface border-r border-white/5 flex flex-col h-full shrink-0 transition-all duration-300">
       <div className="p-6 flex items-center gap-3">
         <div className="w-8 h-8 bg-white/5 rounded-lg flex items-center justify-center shrink-0 overflow-hidden border border-white/5">
-          <img src="/logo-openshorts.png" alt="Logo" className="w-full h-full object-cover" />
+          <img src="/logo-reelsflow.png" alt="Logo" className="w-full h-full object-cover" />
         </div>
-        <span className="font-bold text-lg text-white hidden lg:block tracking-tight">OpenShorts</span>
+        <span className="font-bold text-lg text-white hidden lg:block tracking-tight">ReelsFlow</span>
       </div>
 
       <nav className="flex-1 px-4 py-4 space-y-2">
@@ -502,7 +502,7 @@ function App() {
       <div className="p-4 border-t border-white/5 space-y-2">
         <a
           href="#"
-          onClick={(e) => { e.preventDefault(); localStorage.removeItem('openshorts_skip_landing'); window.location.hash = ''; window.location.reload(); }}
+          onClick={(e) => { e.preventDefault(); localStorage.removeItem('reelsflow_skip_landing'); window.location.hash = ''; window.location.reload(); }}
           className="flex items-center gap-2 p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
         >
           <div className="w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center shrink-0">
@@ -514,7 +514,7 @@ function App() {
           </div>
         </a>
         <a
-          href="https://github.com/mutonby/openshorts"
+          href="https://github.com/mutonby/reelsflow"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-colors group"
@@ -590,10 +590,10 @@ function App() {
                 <span className="font-semibold">Required API keys missing.</span>{' '}
                 <span className="text-amber-200/80">
                   {!apiKey && !uploadPostKey
-                    ? 'Set your Gemini and Upload-Post API keys to use OpenShorts.'
+                    ? 'Set your Gemini and Upload-Post API keys to use ReelsFlow.'
                     : !apiKey
-                      ? 'Set your Gemini API key to use OpenShorts.'
-                      : 'Set your Upload-Post API key to use OpenShorts.'}
+                      ? 'Set your Gemini API key to use ReelsFlow.'
+                      : 'Set your Upload-Post API key to use ReelsFlow.'}
                 </span>
               </div>
             </div>
@@ -1079,7 +1079,7 @@ function App() {
                   : 'Upload-Post API Key Required'}
             </h2>
             <p className="text-sm text-zinc-400">
-              OpenShorts needs both a <strong className="text-zinc-200">Gemini</strong> API key and an <strong className="text-zinc-200">Upload-Post</strong> API key. Both have free tiers.
+              ReelsFlow needs both a <strong className="text-zinc-200">Gemini</strong> API key and an <strong className="text-zinc-200">Upload-Post</strong> API key. Both have free tiers.
             </p>
 
             {/* Gemini block */}

@@ -250,8 +250,8 @@ export default defineConfig({
   plugins: [react(), localYoutubeDownloader()],
   server: {
     allowedHosts: [
-      'openshorts.app',
-      'www.openshorts.app'
+      'reelsflow.app',
+      'www.reelsflow.app'
     ],
     proxy: {
       '/api': {
