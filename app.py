@@ -517,10 +517,10 @@ async def get_job_progress(job_id: str):
     """Get current job progress for real-time UI updates."""
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     progress = job_progress.get(job_id, {})
     job_data = jobs[job_id]
-    
+
     return {
         "job_id": job_id,
         "status": job_data.get("status", "unknown"),
@@ -530,6 +530,32 @@ async def get_job_progress(job_id: str):
         "files_completed": progress.get("files_completed", 0),
         "message": progress.get("message", "")
     }
+
+
+@app.put("/api/jobs/{job_id}/progress")
+async def update_job_progress(job_id: str, progress_data: dict):
+    """Update job progress from main.py during processing."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job_id not in job_progress:
+        job_progress[job_id] = {}
+
+    # Update progress fields
+    if 'progress_percent' in progress_data:
+        job_progress[job_id]['progress_percent'] = progress_data['progress_percent']
+    if 'message' in progress_data:
+        job_progress[job_id]['message'] = progress_data['message']
+    if 'current_file' in progress_data:
+        job_progress[job_id]['current_file'] = progress_data['current_file']
+    if 'stage' in progress_data:
+        job_progress[job_id]['stage'] = progress_data['stage']
+    if 'files_total' in progress_data:
+        job_progress[job_id]['files_total'] = progress_data['files_total']
+    if 'files_completed' in progress_data:
+        job_progress[job_id]['files_completed'] = progress_data['files_completed']
+
+    return {"status": "ok"}
 
 @app.post("/api/process")
 async def process_endpoint(
@@ -619,10 +645,13 @@ async def process_endpoint(
                     raise HTTPException(status_code=413, detail=f"File too large. Max size {MAX_FILE_SIZE_MB}MB")
                 buffer.write(content)
 
-        cmd.extend(["-i", input_path])
+    cmd.extend(["-i", input_path])
 
     cmd.extend(["-o", job_output_dir])
-    cmd.extend(["--format", output_format])  # 'vertical' or 'original'
+    cmd.extend(["--format", output_format]) # 'vertical' or 'original'
+    # Pass job_id and backend URL for progress updates
+    cmd.extend(["--job-id", job_id])
+    cmd.extend(["--backend-url", "http://localhost:8000"])
 
     print(f"[attestation] job={job_id} ip={attestation['ip']} source={attestation['source']} ack=true")
 

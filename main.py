@@ -457,6 +457,39 @@ def sanitize_filename(filename):
     return filename[:100]
 
 
+def update_progress(job_id, backend_url, stage, message, progress_percent, current_file="", files_total=0, files_completed=0):
+    """Update job progress via HTTP PUT to backend."""
+    import urllib.request
+    import json
+    
+    if not job_id or not backend_url:
+        return False
+    
+    try:
+        data = {
+            'progress_percent': progress_percent,
+            'message': message,
+            'stage': stage,
+            'current_file': current_file,
+            'files_total': files_total,
+            'files_completed': files_completed
+        }
+        
+        url = f"{backend_url.rstrip('/')}/api/jobs/{job_id}/progress"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(data).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+            method='PUT'
+        )
+        
+        with urllib.request.urlopen(req, timeout=2) as response:
+            return response.status == 200
+    except Exception as e:
+        # Silently fail - progress updates are not critical
+        return False
+
+
 def download_youtube_video(url, output_dir="."):
     """
     Downloads a YouTube video using yt-dlp.
@@ -811,21 +844,37 @@ def process_video_to_vertical(input_video, final_output_video):
 
 def transcribe_video(video_path):
     from faster_whisper import WhisperModel
-    
+
     # Auto-detect GPU for maximum performance
     if torch.cuda.is_available():
         device = "cuda"
-        compute_type = "float16"
         model_size = "large-v3"
-        print(f"🎙️  Transcribing with Faster-Whisper GPU ({torch.cuda.get_device_name(0)})")
-        print(f"   Model: {model_size} | Device: {device} | Compute: {compute_type}")
+        # Intentar float16 primero, si falla usar int8
+        compute_type = "float16"
+        print(f"🎙️ Transcribing with Faster-Whisper GPU ({torch.cuda.get_device_name(0)})")
+        print(f" Model: {model_size} | Device: {device} | Compute: {compute_type}")
     else:
         device = "cpu"
         compute_type = "int8"
         model_size = "base"
-        print(f"🎙️  Transcribing with Faster-Whisper CPU (model: {model_size})")
-    
-    model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        print(f"🎙️ Transcribing with Faster-Whisper CPU (model: {model_size})")
+
+    # Intentar crear el modelo, si falla float16, usar int8
+    model = None
+    if device == "cuda":
+        for ctype in ["float16", "int8", "float32"]:
+            try:
+                model = WhisperModel(model_size, device=device, compute_type=ctype)
+                print(f"✓ Using compute_type: {ctype}")
+                break
+            except ValueError as e:
+                print(f"⚠️ {ctype} no soportado, probando siguiente...")
+                if model is None:
+                    model = WhisperModel(model_size, device=device, compute_type="int8")
+                    compute_type = "int8"
+                    break
+    else:
+        model = WhisperModel(model_size, device=device, compute_type=compute_type)
     
     segments, info = model.transcribe(video_path, word_timestamps=True)
     
@@ -967,7 +1016,9 @@ if __name__ == '__main__':
     parser.add_argument('--keep-original', action='store_true', help="Keep the downloaded YouTube video.")
     parser.add_argument('--skip-analysis', action='store_true', help="Skip AI analysis and convert the whole video.")
     parser.add_argument('--format', type=str, default='vertical', choices=['vertical', 'original'],
-                        help="Output format: 'vertical' (9:16 crop+track, default) or 'original' (keep original aspect ratio).")
+    help="Output format: 'vertical' (9:16 crop+track, default) or 'original' (keep original aspect ratio).")
+    parser.add_argument('--job-id', type=str, help="Job ID for progress tracking")
+    parser.add_argument('--backend-url', type=str, default="http://localhost:8000", help="Backend URL for progress updates")
     
     args = parser.parse_args()
 

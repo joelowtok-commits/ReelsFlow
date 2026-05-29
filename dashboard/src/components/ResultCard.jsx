@@ -29,25 +29,40 @@ const [editError, setEditError] = useState(null);
 const [clipDuration, setClipDuration] = useState(clip.end && clip.start ? clip.end - clip.start : 30);
 
 // Progress state for real-time sync
-const [progress, setProgress] = useState({ status: 'processing', progress_percent: 0, message: 'Procesando...' });
+const [progress, setProgress] = useState({ status: 'processing', progress_percent: 0, message: 'Procesando...', stage: '' });
+const [uploadProgress, setUploadProgress] = useState(null);
+
+// Listen for upload progress events
+useEffect(() => {
+  const handleUploadProgress = (event) => {
+    setUploadProgress(event.detail);
+  };
+  
+  window.addEventListener('uploadProgress', handleUploadProgress);
+  return () => window.removeEventListener('uploadProgress', handleUploadProgress);
+}, []);
 
 // Poll job progress from backend
 useEffect(() => {
-if (!jobId || clip.status === 'ready') return;
+  if (!jobId || clip.status === 'ready') return;
 
-const pollProgress = async () => {
-try {
-const res = await fetch(getApiUrl(`/api/jobs/${jobId}/progress`));
-if (res.ok) {
-const data = await res.json();
-setProgress(data);
-}
-} catch (e) {}
-};
+  const pollProgress = async () => {
+    try {
+      const res = await fetch(getApiUrl(`/api/jobs/${jobId}/progress`));
+      if (res.ok) {
+        const data = await res.json();
+        setProgress(data);
+        // Clear upload progress once processing starts
+        if (data.progress_percent > 0) {
+          setUploadProgress(null);
+        }
+      }
+    } catch (e) {}
+  };
 
-pollProgress();
-const interval = setInterval(pollProgress, 2000);
-return () => clearInterval(interval);
+  pollProgress();
+  const interval = setInterval(pollProgress, 2000);
+  return () => clearInterval(interval);
 }, [jobId, clip.status]);
 
 // Accumulate Remotion layers across operations
@@ -426,38 +441,60 @@ if (data && data.durationSec) setClipDuration(data.durationSec);
 
 {/* Auto Edit Overlay if Processing */}
 {isEditing && (
-<div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-10 p-4 text-center">
-<Loader2 size={32} className="text-primary animate-spin mb-3" />
-<span className="text-xs font-bold text-white uppercase tracking-wider">AI Magic in Progress...</span>
-<span className="text-[10px] text-zinc-400 mt-1">Applying viral edits & zooms</span>
-</div>
+  <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-10 p-4 text-center">
+    <Loader2 size={32} className="text-primary animate-spin mb-3" />
+    <span className="text-xs font-bold text-white uppercase tracking-wider">AI Magic in Progress...</span>
+    <span className="text-[10px] text-zinc-400 mt-1">Applying viral edits & zooms</span>
+  </div>
 )}
 
-{/* Progress Bar Overlay for Sync/Upload */}
-{clip.status !== 'ready' && progress.progress_percent > 0 && progress.progress_percent < 100 && (
-<div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 p-4 text-center">
-<div className="w-full max-w-xs">
-<div className="flex items-center justify-center gap-2 mb-3">
-<Loader2 size={20} className="text-primary animate-spin" />
-<span className="text-xs font-bold text-white uppercase tracking-wider">{progress.message || 'Procesando...'}</span>
-</div>
-<div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
-<div
-className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full transition-all duration-300"
-style={{ width: `${Math.min(100, progress.progress_percent)}%` }}
-/>
-</div>
-<div className="flex justify-between mt-2 text-[10px] text-zinc-400">
-<span>{progress.current_file ? `Archivo: ${progress.current_file}` : 'Iniciando...'}</span>
-<span>{Math.round(progress.progress_percent)}%</span>
-</div>
-{progress.files_total > 0 && (
-<div className="text-[10px] text-zinc-500 mt-1">
-{progress.files_completed || 0}/{progress.files_total} archivos
-</div>
+{/* Upload Progress Overlay */}
+{uploadProgress && (
+  <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 p-4 text-center">
+    <div className="w-full max-w-xs">
+      <div className="flex items-center justify-center gap-2 mb-3">
+        <Loader2 size={20} className="text-primary animate-spin" />
+        <span className="text-xs font-bold text-white uppercase tracking-wider">Subiendo archivo...</span>
+      </div>
+      <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+        <div
+          className="bg-gradient-to-r from-green-500 to-emerald-500 h-full transition-all duration-300"
+          style={{ width: `${uploadProgress.percent}%` }}
+        />
+      </div>
+      <div className="flex justify-between mt-2 text-[10px] text-zinc-400">
+        <span>{(uploadProgress.loaded / 1024 / 1024).toFixed(1)}MB / {(uploadProgress.total / 1024 / 1024).toFixed(1)}MB</span>
+        <span>{uploadProgress.percent}%</span>
+      </div>
+    </div>
+  </div>
 )}
-</div>
-</div>
+
+{/* Processing Progress Bar Overlay */}
+{clip.status !== 'ready' && !uploadProgress && (progress.progress_percent > 0 || progress.stage) && progress.progress_percent < 100 && (
+  <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 p-4 text-center">
+    <div className="w-full max-w-xs">
+      <div className="flex items-center justify-center gap-2 mb-3">
+        <Loader2 size={20} className="text-primary animate-spin" />
+        <span className="text-xs font-bold text-white uppercase tracking-wider">{progress.message || progress.stage ? `Procesando: ${progress.stage}` : 'Procesando...'}</span>
+      </div>
+      <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+        <div
+          className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full transition-all duration-300"
+          style={{ width: `${Math.min(100, progress.progress_percent)}%` }}
+        />
+      </div>
+      <div className="flex justify-between mt-2 text-[10px] text-zinc-400">
+        <span>{progress.current_file ? `Archivo: ${progress.current_file}` : progress.stage ? progress.stage : 'Iniciando...'}</span>
+        <span>{Math.round(progress.progress_percent)}%</span>
+      </div>
+      {progress.files_total > 0 && (
+        <div className="text-[10px] text-zinc-500 mt-1">
+          {progress.files_completed || 0}/{progress.files_total} archivos
+        </div>
+      )}
+    </div>
+  </div>
 )}
 </div>
 

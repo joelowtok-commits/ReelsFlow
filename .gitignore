@@ -9,8 +9,18 @@
 
 # Python virtual environment
 .venv/
+venv/
+env/
 __pycache__/
 *.pyc
+
+# Kaggle control temporary folders
+*temp_dataset_*
+temp_logs/
+temp_output/
+temp_output_raw/
+kaggle_output/
+kaggle_results/
 
 # Temporary files / runtime dirs
 temp_*

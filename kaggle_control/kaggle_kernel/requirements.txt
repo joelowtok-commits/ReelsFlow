@@ -1,0 +1,9 @@
+scenedetect
+mediapipe
+ultralytics
+faster-whisper
+opencv-python
+yt-dlp
+torch
+torchvision
+torchaudio

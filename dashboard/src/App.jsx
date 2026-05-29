@@ -298,11 +298,24 @@ function App() {
     }
   }, [falKey]);
 
-  useEffect(() => {
-    if (uploadPostKey && userProfiles.length === 0) {
-      fetchUserProfiles();
-    }
-  }, [uploadPostKey]);
+useEffect(() => {
+  if (uploadPostKey && userProfiles.length === 0) {
+    fetchUserProfiles();
+  }
+}, [uploadPostKey]);
+
+// Listen for upload progress events (dispatched from handleProcess)
+useEffect(() => {
+  const handleUploadProgress = (event) => {
+    // Upload progress is handled by ResultCard component
+    // This is just a fallback for global state if needed
+    const { percent, loaded, total } = event.detail;
+    console.log(`Upload progress: ${percent}% (${loaded}/${total})`);
+  };
+  
+  window.addEventListener('uploadProgress', handleUploadProgress);
+  return () => window.removeEventListener('uploadProgress', handleUploadProgress);
+}, []);
 
   useEffect(() => {
     let interval;
@@ -381,39 +394,82 @@ function App() {
     setProcessingMedia(data);
 
     try {
-      let body;
-      const headers = { 'X-Gemini-Key': apiKey };
-
       if (data.type === 'url') {
-        headers['Content-Type'] = 'application/json';
-        body = JSON.stringify({
-          url: data.payload,
-          acknowledged: !!data.acknowledged,
-          auto_edit: !!data.autoEdit,
+        // URL-based processing - use fetch
+        const res = await fetch(getApiUrl('/api/process'), {
+          method: 'POST',
+          headers: { 
+            'X-Gemini-Key': apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            url: data.payload,
+            acknowledged: !!data.acknowledged,
+            auto_edit: !!data.autoEdit,
+          })
         });
+
+        if (!res.ok) throw new Error(await res.text());
+        const resData = await res.json();
+
+        // Persist auto-download flag for this job (survives page reload)
+        if (data.autoEdit) {
+          localStorage.setItem('auto_download_' + resData.job_id, 'true');
+        }
+
+        setJobId(resData.job_id);
       } else {
+        // File upload - use XMLHttpRequest for progress tracking
         const formData = new FormData();
         formData.append('file', data.payload);
         formData.append('acknowledged', data.acknowledged ? 'true' : 'false');
         formData.append('auto_edit', data.autoEdit ? 'true' : 'false');
-        body = formData;
+
+        const resData = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              // Dispatch custom event for progress
+              window.dispatchEvent(new CustomEvent('uploadProgress', { 
+                detail: { 
+                  percent, 
+                  loaded: event.loaded, 
+                  total: event.total 
+                } 
+              }));
+            }
+          };
+
+          xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch (e) {
+                reject(new Error('Invalid response'));
+              }
+            } else {
+              reject(new Error(xhr.statusText || 'Upload failed'));
+            }
+          };
+
+          xhr.onerror = function() {
+            reject(new Error('Network error'));
+          };
+
+          xhr.open('POST', getApiUrl('/api/process'));
+          xhr.setRequestHeader('X-Gemini-Key', apiKey);
+          xhr.send(formData);
+        });
+
+        // Persist auto-download flag for this job (survives page reload)
+        if (data.autoEdit) {
+          localStorage.setItem('auto_download_' + resData.job_id, 'true');
+        }
+
+        setJobId(resData.job_id);
       }
-
-      const res = await fetch(getApiUrl('/api/process'), {
-        method: 'POST',
-        headers: data.type === 'url' ? headers : { 'X-Gemini-Key': apiKey },
-        body
-      });
-
-      if (!res.ok) throw new Error(await res.text());
-      const resData = await res.json();
-
-      // Persist auto-download flag for this job (survives page reload)
-      if (data.autoEdit) {
-        localStorage.setItem('auto_download_' + resData.job_id, 'true');
-      }
-
-      setJobId(resData.job_id);
 
     } catch (e) {
       setStatus('error');

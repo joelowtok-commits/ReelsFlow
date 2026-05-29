@@ -20,21 +20,11 @@ def analyze_video_for_titles(api_key, video_path, transcript=None):
     else:
         print("🎬 [Thumbnail] Using pre-computed transcript (Whisper already done)...")
 
-    print("📤 [Thumbnail] Uploading video to Gemini...")
     client = genai.Client(api_key=api_key)
-
-    file_upload = client.files.upload(file=video_path)
-    while True:
-        file_info = client.files.get(name=file_upload.name)
-        if file_info.state == "ACTIVE":
-            break
-        elif file_info.state == "FAILED":
-            raise Exception("Video processing failed by Gemini.")
-        time.sleep(2)
 
     prompt = f"""You are a YouTube title expert who creates viral, click-worthy titles.
 
-Analyze this video and its transcript, then suggest 10 YouTube titles that would maximize CTR (click-through rate).
+Analyze the transcript of the video, then suggest 10 YouTube titles that would maximize CTR (click-through rate).
 
 TRANSCRIPT:
 {transcript['text']}
@@ -63,10 +53,10 @@ OUTPUT JSON:
     ]
 }}"""
 
-    print("🤖 [Thumbnail] Asking Gemini for title suggestions...")
+    print("🤖 [Thumbnail] Asking Gemini for title suggestions (text-only)...")
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=[file_upload, prompt],
+        contents=[prompt],
         config=types.GenerateContentConfig(
             response_mime_type="application/json"
         )

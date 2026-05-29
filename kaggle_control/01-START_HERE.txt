@@ -1,0 +1,97 @@
+========================================
+OpenShorts + Kaggle Integration
+========================================
+
+¡Bienvenido! Esta es tu guia rapida.
+
+========================================
+1. INSTALA DEPENDENCIAS
+========================================
+
+pip install kaggle google-api-python-client google-auth gdown
+
+========================================
+2. CONFIGURA KAGGLE
+========================================
+
+# Tu token (de la imagen que copiaste):
+KGAT_85fbbdc42d20933b5972be2afae8de3a
+
+# En Windows, ejecuta esto en PowerShell:
+mkdir C:\Users\joel9\.kaggle
+echo KGAT_85fbbdc42d20933b5972be2afae8de3a > C:\Users\joel9\.kaggle\access_token
+
+========================================
+3. CONFIGURA GOOGLE DRIVE
+========================================
+
+1. Anda a: https://console.cloud.google.com/
+2. Crea un proyecto nuevo
+3. Habilita "Google Drive API"
+4. Crea credentials (OAuth Desktop)
+5. Descarga credentials.json
+6. Guardalo en: E:\PROYECTOS_PY\OpenShorts\1.1\kaggle_control\credentials.json
+
+========================================
+4. TESTEA TU SETUP
+========================================
+
+cd E:\PROYECTOS_PY\OpenShorts\1.1\kaggle_control
+python test_setup.py
+
+Si todo esta OK, continua. Si no, revisa SETUP_KAGGLE.md
+
+========================================
+5. DEPLOY DEL KERNEL (1 sola vez)
+========================================
+
+python deploy_kernel.py
+
+Esto crea el kernel en Kaggle:
+https://www.kaggle.com/joelowtok/openshorts-processor
+
+========================================
+6. USA EL SISTEMA
+========================================
+
+# Opcion A: Desde Python
+from kaggle_integration import process_video_on_kaggle
+job_id = process_video_on_kaggle('mi_video.mp4')
+
+# Opcion B: Desde consola
+python kaggle_integration.py mi_video.mp4
+
+# Opcion C: Desde tu app (cuando la integres)
+# Ver integration_example.py
+
+========================================
+ARCHIVOS PRINCIPALES
+========================================
+
+kaggle_integration.py   - Coneccion con Kaggle
+deploy_kernel.py        - Sube el kernel a Kaggle
+drive_upload.py         - Sube videos a Drive
+test_setup.py           - Testea tu setup
+SETUP_KAGGLE.md         - Guia completa
+integration_example.py  - Como integrar con tu app
+
+========================================
+PROXIMOS PASOS
+========================================
+
+1. [ ] Configurar token de Kaggle (paso 2)
+2. [ ] Configurar Google Drive (paso 3)
+3. [ ]jecutar test_setup.py
+4. [ ] Ejecutar deploy_kernel.py
+5. [ ] Probar con video pequeno
+6. [ ] Integrar con tu app
+
+========================================
+DUDAS?
+========================================
+
+- Lee SETUP_KAGGLE.md (guia completa)
+- Lee COMO_USAR.md (ejemplos de uso)
+- Revisa integration_example.py (codigo)
+
+========================================

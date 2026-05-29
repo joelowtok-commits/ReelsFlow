@@ -1,0 +1,18 @@
+{
+  "id": "joelowtok/openshorts-processor",
+  "title": "OpenShorts Processor",
+  "code_file": "main.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "joelowtok/openshorts-code",
+    "joelowtok/openshorts-input-1779606340"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
