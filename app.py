@@ -21,8 +21,8 @@ from s3_uploader import upload_job_artifacts, list_all_clips, upload_actor_to_s3
 load_dotenv()
 
 # Constants
-UPLOAD_DIR = "uploads"
-OUTPUT_DIR = "output"
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "output")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -564,7 +564,8 @@ async def process_endpoint(
     url: Optional[str] = Form(None),
     acknowledged: Optional[str] = Form(None),
     output_format: Optional[str] = Form(None),
-    auto_edit: Optional[str] = Form(None)
+    auto_edit: Optional[str] = Form(None),
+    drive_filename: Optional[str] = Form(None)
 ):
     api_key = request.headers.get("X-Gemini-Key")
     if not api_key:
@@ -572,8 +573,9 @@ async def process_endpoint(
 
     ack_flag = str(acknowledged).lower() in ("1", "true", "yes")
     auto_edit_flag = str(auto_edit).lower() in ("1", "true", "yes")
+    drive_filename_val = drive_filename
 
-    # Handle JSON body manually for URL payload
+    # Handle JSON body manually for URL/Drive payloads
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         body = await request.json()
@@ -581,21 +583,14 @@ async def process_endpoint(
         ack_flag = bool(body.get("acknowledged"))
         output_format = body.get("output_format", output_format)
         auto_edit_flag = bool(body.get("auto_edit", False))
-
-    # Handle JSON body manually for URL payload
-    content_type = request.headers.get("content-type", "")
-    if "application/json" in content_type:
-        body = await request.json()
-        url = body.get("url")
-        ack_flag = bool(body.get("acknowledged"))
-        output_format = body.get("output_format", output_format)
+        drive_filename_val = body.get("drive_filename")
 
     # Validate output_format (defaults to 'vertical')
     if output_format not in ("vertical", "original"):
         output_format = "vertical"
 
-    if not url and not file:
-        raise HTTPException(status_code=400, detail="Must provide URL or File")
+    if not url and not file and not drive_filename_val:
+        raise HTTPException(status_code=400, detail="Must provide URL, File, or drive_filename")
 
     if not ack_flag:
         raise HTTPException(status_code=400, detail="You must confirm you own the content or have rights to process it.")
@@ -614,7 +609,7 @@ async def process_endpoint(
         "ip": client_ip,
         "user_agent": user_agent,
         "timestamp": time.time(),
-        "source": "url" if url else "file",
+        "source": "drive" if drive_filename_val else ("url" if url else "file"),
     }
 
     job_id = str(uuid.uuid4())
@@ -626,7 +621,20 @@ async def process_endpoint(
     env = os.environ.copy()
     env["GEMINI_API_KEY"] = api_key # Override with key from request
 
-    if url:
+    if drive_filename_val:
+        # Wait for file to sync in UPLOAD_DIR
+        input_path = os.path.join(UPLOAD_DIR, drive_filename_val)
+        print(f"⏳ Waiting for Google Drive file sync: {input_path}")
+        found = False
+        for _ in range(30):
+            if os.path.exists(input_path) and os.path.getsize(input_path) > 0:
+                found = True
+                break
+            await asyncio.sleep(2)
+        if not found:
+            raise HTTPException(status_code=404, detail=f"Timeout waiting for Google Drive file: {drive_filename_val}")
+        cmd.extend(["-i", input_path])
+    elif url:
         cmd.extend(["-u", url])
     else:
         # Save uploaded file with size limit check
@@ -644,8 +652,7 @@ async def process_endpoint(
                     shutil.rmtree(job_output_dir)
                     raise HTTPException(status_code=413, detail=f"File too large. Max size {MAX_FILE_SIZE_MB}MB")
                 buffer.write(content)
-
-    cmd.extend(["-i", input_path])
+        cmd.extend(["-i", input_path])
 
     cmd.extend(["-o", job_output_dir])
     cmd.extend(["--format", output_format]) # 'vertical' or 'original'
