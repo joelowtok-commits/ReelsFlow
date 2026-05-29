@@ -229,7 +229,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OpenShorts Colab Setup")
     parser.add_argument("--step", choices=["tailscale", "install", "server", "all"],
                         default="all", help="Which step to run")
-    parser.add_argument("--authkey", type=str, default="tskey-auth-krZx6WbEQB11CNTRL-LpqR2MS6YeWXF9fRMSp7eWLEXDTGBJv2", help="Tailscale Auth Key")
+    parser.add_argument("--authkey", default="tskey-auth-kY5UFMnc4n11CNTRL-FP8hox4LH2jUNR4Ma28s1jY7WWVuwVDBU", help="Tailscale Auth Key")
     parser.add_argument("--repo", type=str, default="joelowtok-commits/ReelsFlow", help="GitHub repo (user/repo)")
     parser.add_argument("--gemini-key", type=str, help="Gemini API Key")
     parser.add_argument("--workdir", type=str, default="/content/OpenShorts",
