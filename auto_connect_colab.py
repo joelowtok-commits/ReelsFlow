@@ -418,6 +418,7 @@ def main():
         dashboard_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard")
         env = os.environ.copy()
         env["VITE_BACKEND_URL"] = f"http://{gpu_ip}:8000"
+        env["VITE_LOCAL_SYNC"] = "true"
         # Pass Google Drive path to Vite so it can serve files locally
         if google_drive_path:
             env["GOOGLE_DRIVE_PATH"] = google_drive_path

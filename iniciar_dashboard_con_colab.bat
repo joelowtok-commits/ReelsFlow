@@ -11,8 +11,8 @@ echo.
 echo.
 cd /d "%~dp0"
 
-REM First, find Colab GPU IP
-echo Detectando Colab...
-python find_gpu.py
+REM First, find Colab GPU IP and launch dashboard with local sync
+echo Detectando Colab y levantando sincronizador...
+python auto_connect_colab.py
 
-pause
+exit

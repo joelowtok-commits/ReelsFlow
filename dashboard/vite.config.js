@@ -54,36 +54,92 @@ function localYoutubeDownloader() {
   return {
     name: 'local-youtube-downloader',
     configureServer(server) {
-      // 1. Servir archivos locales desde Google Drive si estan disponibles (evita descargar por Tailscale)
+      // 1. Servir archivos locales desde Google Drive o el directorio de salida local si estan disponibles (evita descargar por Tailscale)
       server.middlewares.use(async (req, res, next) => {
         const googleDrivePath = process.env.GOOGLE_DRIVE_PATH;
-        if (googleDrivePath) {
-          if (req.url.startsWith('/videos/')) {
-            const relativePath = req.url.slice('/videos/'.length); // job_id/filename.mp4
-            const localFilePath = path.join(googleDrivePath, 'output', relativePath);
-            if (fs.existsSync(localFilePath) && fs.statSync(localFilePath).isFile()) {
-              console.log(`⚡ [Vite Local Server] Sirviendo video localmente desde GDrive: ${localFilePath}`);
-              res.writeHead(200, { 'Content-Type': 'video/mp4' });
-              fs.createReadStream(localFilePath).pipe(res);
-              return;
-            }
+        const localOutputDir = path.join(process.cwd(), '..', 'output');
+
+        if (req.url.startsWith('/videos/')) {
+          const relativePath = req.url.slice('/videos/'.length); // job_id/filename.mp4
+          let localFilePath = '';
+          if (googleDrivePath) {
+            localFilePath = path.join(googleDrivePath, 'output', relativePath);
           }
-          if (req.url.startsWith('/thumbnails/')) {
-            const relativePath = req.url.slice('/thumbnails/'.length); // filename.png
-            const localFilePath = path.join(googleDrivePath, 'output', 'thumbnails', relativePath);
-            if (fs.existsSync(localFilePath) && fs.statSync(localFilePath).isFile()) {
-              console.log(`⚡ [Vite Local Server] Sirviendo miniatura localmente desde GDrive: ${localFilePath}`);
-              let contentType = 'image/jpeg';
-              if (relativePath.endsWith('.png')) contentType = 'image/png';
-              else if (relativePath.endsWith('.gif')) contentType = 'image/gif';
-              else if (relativePath.endsWith('.webp')) contentType = 'image/webp';
-              
-              res.writeHead(200, { 'Content-Type': contentType });
-              fs.createReadStream(localFilePath).pipe(res);
-              return;
-            }
+          if (!localFilePath || !fs.existsSync(localFilePath)) {
+            localFilePath = path.join(localOutputDir, relativePath);
+          }
+
+          if (fs.existsSync(localFilePath) && fs.statSync(localFilePath).isFile()) {
+            console.log(`⚡ [Vite Local Server] Sirviendo video localmente: ${localFilePath}`);
+            res.writeHead(200, { 'Content-Type': 'video/mp4' });
+            fs.createReadStream(localFilePath).pipe(res);
+            return;
           }
         }
+
+        if (req.url.startsWith('/thumbnails/')) {
+          const relativePath = req.url.slice('/thumbnails/'.length); // filename.png
+          let localFilePath = '';
+          if (googleDrivePath) {
+            localFilePath = path.join(googleDrivePath, 'output', 'thumbnails', relativePath);
+          }
+          if (!localFilePath || !fs.existsSync(localFilePath)) {
+            localFilePath = path.join(localOutputDir, 'thumbnails', relativePath);
+          }
+
+          if (fs.existsSync(localFilePath) && fs.statSync(localFilePath).isFile()) {
+            console.log(`⚡ [Vite Local Server] Sirviendo miniatura localmente: ${localFilePath}`);
+            let contentType = 'image/jpeg';
+            if (relativePath.endsWith('.png')) contentType = 'image/png';
+            else if (relativePath.endsWith('.gif')) contentType = 'image/gif';
+            else if (relativePath.endsWith('.webp')) contentType = 'image/webp';
+            
+            res.writeHead(200, { 'Content-Type': contentType });
+            fs.createReadStream(localFilePath).pipe(res);
+            return;
+          }
+        }
+
+        // Endpoint para abrir carpeta local en Explorer
+        if (req.url === '/api/open-folder' && req.method === 'POST') {
+          try {
+            const bodyStr = await new Promise((resolve, reject) => {
+              let data = '';
+              req.on('data', chunk => data += chunk);
+              req.on('end', () => resolve(data));
+              req.on('error', err => reject(err));
+            });
+            const parsed = JSON.parse(bodyStr);
+            const jobId = parsed.job_id;
+            
+            let folderPath = '';
+            if (googleDrivePath) {
+              folderPath = path.join(googleDrivePath, 'output', jobId);
+            } else {
+              folderPath = path.join(localOutputDir, jobId);
+            }
+
+            if (fs.existsSync(folderPath)) {
+              console.log(`📂 [Vite Local Server] Abriendo carpeta en Explorer: ${folderPath}`);
+              exec(`explorer "${folderPath}"`, (err) => {
+                if (err) {
+                  console.error(`Error al abrir explorador: ${err.message}`);
+                }
+              });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true, path: folderPath }));
+            } else {
+              console.warn(`⚠️ [Vite Local Server] Carpeta no existe aún: ${folderPath}`);
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ detail: `La carpeta local todavía no existe o está siendo sincronizada.` }));
+            }
+          } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ detail: `Error: ${err.message}` }));
+          }
+          return;
+        }
+
         next();
       });
 

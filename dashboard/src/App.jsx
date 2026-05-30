@@ -334,13 +334,18 @@ useEffect(() => {
             setStatus('complete');
             clearInterval(interval);
 
-            // Auto-download if the flag was set for this job
+            // Auto-download if the flag was set for this job and local sync is not active
             const shouldAutoDownload = localStorage.getItem('auto_download_' + jobId) === 'true';
             if (shouldAutoDownload) {
               localStorage.removeItem('auto_download_' + jobId);
-              const clips = data.result?.clips || [];
-              // Give the UI a moment to render before firing downloads
-              setTimeout(() => triggerAutoDownloads(clips, jobId), 800);
+              const isLocalSyncActive = import.meta.env.VITE_LOCAL_SYNC === 'true';
+              if (!isLocalSyncActive) {
+                const clips = data.result?.clips || [];
+                // Give the UI a moment to render before firing downloads
+                setTimeout(() => triggerAutoDownloads(clips, jobId), 800);
+              } else {
+                console.log("Local sync is active. Skipping browser auto-download.");
+              }
             }
           } else if (data.status === 'failed') {
             setStatus('error');
@@ -490,11 +495,16 @@ useEffect(() => {
 
   const Sidebar = () => (
     <div className="w-20 lg:w-64 bg-surface border-r border-white/5 flex flex-col h-full shrink-0 transition-all duration-300">
-      <div className="p-6 flex items-center gap-3">
+      <div className="p-6 flex items-center gap-3 flex-wrap">
         <div className="w-8 h-8 bg-white/5 rounded-lg flex items-center justify-center shrink-0 overflow-hidden border border-white/5">
           <img src="/logo-reelsflow.png" alt="Logo" className="w-full h-full object-cover" />
         </div>
         <span className="font-bold text-lg text-white hidden lg:block tracking-tight">ReelsFlow</span>
+        {import.meta.env.VITE_LOCAL_SYNC === 'true' && (
+          <span className="text-[10px] font-bold uppercase tracking-wider text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded-md hidden lg:inline-block animate-pulse">
+            Local Sync
+          </span>
+        )}
       </div>
 
       <nav className="flex-1 px-4 py-4 space-y-2">
@@ -1072,10 +1082,33 @@ useEffect(() => {
                       ${results.cost_analysis.total_cost.toFixed(5)}
                     </span>
                   )}
+                  {import.meta.env.VITE_LOCAL_SYNC === 'true' && status === 'complete' && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(getApiUrl('/api/open-folder'), {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ job_id: jobId })
+                          });
+                          if (!res.ok) {
+                            const err = await res.json();
+                            alert(err.detail || 'Error al abrir la carpeta');
+                          }
+                        } catch (e) {
+                          alert('Error al abrir la carpeta: ' + e.message);
+                        }
+                      }}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-green-500/20 hover:bg-green-500/35 border border-green-500/30 text-green-300 hover:text-green-200 rounded-full text-xs font-bold transition-all"
+                    >
+                      <ExternalLink size={14} />
+                      Abrir Carpeta Local
+                    </button>
+                  )}
                   {results?.clips?.length > 1 && status === 'complete' && (
                     <button
                       onClick={() => setShowScheduleWeek(true)}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 hover:from-purple-500/30 hover:to-indigo-500/30 border border-purple-500/30 text-purple-300 hover:text-purple-200 rounded-full text-xs font-bold transition-all"
+                      className={`${import.meta.env.VITE_LOCAL_SYNC === 'true' ? 'ml-2' : 'ml-auto'} flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-500/20 to-indigo-500/20 hover:from-purple-500/30 hover:to-indigo-500/30 border border-purple-500/30 text-purple-300 hover:text-purple-200 rounded-full text-xs font-bold transition-all`}
                     >
                       <Calendar size={14} />
                       Programar Semana
