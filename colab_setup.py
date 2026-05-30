@@ -44,17 +44,23 @@ def step_mount_drive():
     print("=" * 60)
 
     drive_base = "/content/drive"
-    if os.path.ismount(drive_base) or os.path.exists(os.path.join(drive_base, "MyDrive")):
+    my_drive = os.path.join(drive_base, "MyDrive")
+
+    if os.path.exists(my_drive) and os.listdir(my_drive):
         print("  ✅ Google Drive ya está montado")
     else:
-        try:
-            from google.colab import drive
-            drive.mount(drive_base)
-            print("  ✅ Google Drive montado exitosamente")
-        except Exception as e:
-            print(f"  ❌ Error montando Google Drive: {e}")
-            print("  💡 Asegurate de estar ejecutando esto en Google Colab")
-            sys.exit(1)
+        print("  ❌ Google Drive NO está montado.")
+        print("")
+        print("  ⚠️  drive.mount() no puede ejecutarse desde un script con !python.")
+        print("     Tenés que montarlo en una celda ANTES de ejecutar este script.")
+        print("")
+        print("  👉 Pegá esto en una celda de Colab y ejecutala primero:")
+        print("")
+        print("     from google.colab import drive")
+        print("     drive.mount('/content/drive')")
+        print("")
+        print("  Después volvé a ejecutar este script.")
+        sys.exit(1)
 
     # Crear estructura de carpetas en Drive
     drive_openshorts = "/content/drive/MyDrive/OpenShorts"
