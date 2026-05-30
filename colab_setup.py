@@ -1,15 +1,23 @@
 """
-colab_setup.py — Script para ejecutar en Google Colab.
+colab_setup.py — Script para ejecutar en Google Colab con Google Drive.
 
 Instrucciones:
   1. Crea un nuevo cuaderno en Google Colab con GPU T4.
   2. Ejecuta la celda para clonar e instalar:
+     !rm -rf ReelsFlow
      !git clone https://github.com/joelowtok-commits/ReelsFlow.git
      !bash ReelsFlow/colab_install.sh
      
-  3. Ejecuta el servidor:
+  3. Ejecuta el servidor con Google Drive:
   
-     !python ReelsFlow/colab_setup.py --authkey "tskey-auth-XXXXX" --repo "joelowtok-commits/ReelsFlow"
+     !python ReelsFlow/colab_setup.py --authkey "tskey-auth-XXXXX"
+
+  Los videos se leen y escriben en Google Drive:
+    /content/drive/MyDrive/OpenShorts/uploads/   ← videos subidos desde Windows
+    /content/drive/MyDrive/OpenShorts/output/     ← clips procesados por la GPU
+
+  En tu PC Windows con Google Drive Desktop instalado, la carpeta
+  "G:\\Mi unidad\\OpenShorts" se sincroniza automáticamente.
 """
 
 import subprocess
@@ -29,10 +37,46 @@ def run(cmd, check=True, shell=True, capture=False):
         subprocess.run(cmd, shell=shell, check=check)
 
 
+def step_mount_drive():
+    """Mount Google Drive in Colab."""
+    print("\n" + "=" * 60)
+    print("📂 STEP 1: Montando Google Drive")
+    print("=" * 60)
+
+    drive_base = "/content/drive"
+    if os.path.ismount(drive_base) or os.path.exists(os.path.join(drive_base, "MyDrive")):
+        print("  ✅ Google Drive ya está montado")
+    else:
+        try:
+            from google.colab import drive
+            drive.mount(drive_base)
+            print("  ✅ Google Drive montado exitosamente")
+        except Exception as e:
+            print(f"  ❌ Error montando Google Drive: {e}")
+            print("  💡 Asegurate de estar ejecutando esto en Google Colab")
+            sys.exit(1)
+
+    # Crear estructura de carpetas en Drive
+    drive_openshorts = "/content/drive/MyDrive/OpenShorts"
+    uploads_dir = os.path.join(drive_openshorts, "uploads")
+    output_dir = os.path.join(drive_openshorts, "output")
+    thumbnails_dir = os.path.join(output_dir, "thumbnails")
+
+    os.makedirs(uploads_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(thumbnails_dir, exist_ok=True)
+
+    print(f"  📂 Carpeta de uploads:    {uploads_dir}")
+    print(f"  📂 Carpeta de output:     {output_dir}")
+    print(f"  📂 Carpeta de thumbnails: {thumbnails_dir}")
+
+    return uploads_dir, output_dir
+
+
 def step_tailscale(authkey):
     """Install and connect Tailscale."""
     print("\n" + "=" * 60)
-    print("📡 STEP 1: Instalando y Conectando Tailscale")
+    print("📡 STEP 2: Instalando y Conectando Tailscale")
     print("=" * 60)
 
     # Install
@@ -71,7 +115,7 @@ def step_tailscale(authkey):
 def step_install(repo=None):
     """Install dependencies and clone repo."""
     print("\n" + "=" * 60)
-    print("📦 STEP 2: Instalando Dependencias y Código")
+    print("📦 STEP 3: Instalando Dependencias y Código")
     print("=" * 60)
 
     # System packages
@@ -135,10 +179,12 @@ def step_install(repo=None):
     return work_dir
 
 
-def step_server(work_dir=None, gemini_key=None, aws_id=None, aws_secret=None, aws_region=None, aws_bucket=None, aws_public_bucket=None, aws_endpoint=None):
-    """Launch the OpenShorts backend server."""
+def step_server(work_dir=None, uploads_dir=None, output_dir=None, gemini_key=None,
+                aws_id=None, aws_secret=None, aws_region=None, aws_bucket=None,
+                aws_public_bucket=None, aws_endpoint=None):
+    """Launch the OpenShorts backend server with Google Drive directories."""
     print("\n" + "=" * 60)
-    print("🚀 STEP 3: Lanzando Servidor OpenShorts")
+    print("🚀 STEP 4: Lanzando Servidor OpenShorts (con Google Drive)")
     print("=" * 60)
 
     if not work_dir:
@@ -153,6 +199,14 @@ def step_server(work_dir=None, gemini_key=None, aws_id=None, aws_secret=None, aw
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+    # ★ Google Drive directories — this is the key change!
+    if uploads_dir:
+        env["UPLOAD_DIR"] = uploads_dir
+        print(f"  📂 UPLOAD_DIR = {uploads_dir}")
+    if output_dir:
+        env["OUTPUT_DIR"] = output_dir
+        print(f"  📂 OUTPUT_DIR = {output_dir}")
     
     if gemini_key:
         env["GEMINI_API_KEY"] = gemini_key
@@ -174,8 +228,8 @@ def step_server(work_dir=None, gemini_key=None, aws_id=None, aws_secret=None, aw
         env["AWS_ENDPOINT_URL"] = aws_endpoint
         print("  ✅ AWS_ENDPOINT_URL configurada")
 
-    # Expose port via Tailscale
-    print("\n🌐 Exponiendo puerto 8000 via Tailscale...")
+    # Expose port via Tailscale (solo para la API HTTP, no para transferir archivos pesados)
+    print("\n🌐 Exponiendo puerto 8000 via Tailscale (solo API, archivos van por Drive)...")
     run("tailscale serve --bg --tcp=8000 tcp://localhost:8000", check=False)
     time.sleep(2)
 
@@ -184,16 +238,20 @@ def step_server(work_dir=None, gemini_key=None, aws_id=None, aws_secret=None, aw
     ts_ip = result.stdout.strip() if result and result.stdout.strip() else "100.x.x.x"
 
     print(f"\n{'=' * 60}")
-    print(f"✅ TODO LISTO!")
+    print(f"✅ TODO LISTO! — MODO GOOGLE DRIVE ACTIVO")
     print(f"{'=' * 60}")
-    print(f"\n🌐 Backend URL: http://{ts_ip}:8000")
-    print(f"\n📋 En tu PC Windows, ejecutá:")
-    print(f"   cd E:\\PROYECTOS_PY\\OpenShorts\\1.1")
-    print(f"   python auto_connect_colab.py")
-    print(f"\n   O manualmente:")
-    print(f"   cd dashboard")
-    print(f"   set VITE_BACKEND_URL=http://{ts_ip}:8000")
-    print(f"   npm run dev")
+    print(f"\n📂 Archivos van por Google Drive (NO por red):")
+    print(f"   Uploads: {uploads_dir}")
+    print(f"   Output:  {output_dir}")
+    print(f"\n🌐 API Tailscale: http://{ts_ip}:8000 (solo comandos JSON)")
+    print(f"\n📋 En tu PC Windows:")
+    print(f"   1. Asegurate de tener Google Drive Desktop instalado")
+    print(f"   2. Edita tu .env y pone:")
+    print(f"      GOOGLE_DRIVE_PATH=G:\\Mi unidad\\OpenShorts")
+    print(f"      VITE_BACKEND_URL=http://{ts_ip}:8000")
+    print(f"   3. Ejecuta:")
+    print(f"      cd E:\\PROYECTOS_PY\\OpenShorts\\1.1")
+    print(f"      python auto_connect_colab.py")
     print(f"\n{'=' * 60}")
     print(f"🖥️  Iniciando servidor... (Ctrl+C para detener)")
     print(f"{'=' * 60}\n")
@@ -209,25 +267,30 @@ def step_server(work_dir=None, gemini_key=None, aws_id=None, aws_secret=None, aw
     )
 
 
-def run_all(authkey, repo=None, gemini_key=None, aws_id=None, aws_secret=None, aws_region=None, aws_bucket=None, aws_public_bucket=None, aws_endpoint=None):
+def run_all(authkey, repo=None, gemini_key=None, aws_id=None, aws_secret=None,
+            aws_region=None, aws_bucket=None, aws_public_bucket=None, aws_endpoint=None):
     """Run all steps sequentially."""
     print("\n" + "=" * 60)
-    print("🚀 OpenShorts — Colab GPU Backend Setup")
+    print("🚀 OpenShorts — Colab GPU Backend Setup (Google Drive Mode)")
     print("=" * 60)
 
-    # Step 1
+    # Step 1: Mount Google Drive
+    uploads_dir, output_dir = step_mount_drive()
+
+    # Step 2: Tailscale (solo para API HTTP)
     ts_ip = step_tailscale(authkey)
 
-    # Step 2
+    # Step 3: Install
     work_dir = step_install(repo)
 
-    # Step 3 (blocking)
-    step_server(work_dir, gemini_key, aws_id, aws_secret, aws_region, aws_bucket, aws_public_bucket, aws_endpoint)
+    # Step 4: Server (blocking) — usando directorios de Google Drive
+    step_server(work_dir, uploads_dir, output_dir, gemini_key,
+                aws_id, aws_secret, aws_region, aws_bucket, aws_public_bucket, aws_endpoint)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="OpenShorts Colab Setup")
-    parser.add_argument("--step", choices=["tailscale", "install", "server", "all"],
+    parser = argparse.ArgumentParser(description="OpenShorts Colab Setup (Google Drive Mode)")
+    parser.add_argument("--step", choices=["drive", "tailscale", "install", "server", "all"],
                         default="all", help="Which step to run")
     parser.add_argument("--authkey", default="tskey-auth-kY5UFMnc4n11CNTRL-FP8hox4LH2jUNR4Ma28s1jY7WWVuwVDBU", help="Tailscale Auth Key")
     parser.add_argument("--repo", type=str, default="joelowtok-commits/ReelsFlow", help="GitHub repo (user/repo)")
@@ -245,9 +308,13 @@ if __name__ == "__main__":
     if args.step == "all":
         if not args.authkey:
             print("❌ --authkey es obligatorio para el setup completo")
-            print("   Uso: python colab_setup.py --authkey 'tskey-auth-XXXXX' --repo 'user/ReelsFlow'")
+            print("   Uso: python colab_setup.py --authkey 'tskey-auth-XXXXX'")
             sys.exit(1)
-        run_all(args.authkey, args.repo, args.gemini_key, args.aws_id, args.aws_secret, args.aws_region, args.aws_bucket, args.aws_public_bucket, args.aws_endpoint)
+        run_all(args.authkey, args.repo, args.gemini_key, args.aws_id, args.aws_secret,
+                args.aws_region, args.aws_bucket, args.aws_public_bucket, args.aws_endpoint)
+
+    elif args.step == "drive":
+        step_mount_drive()
 
     elif args.step == "tailscale":
         if not args.authkey:
@@ -259,4 +326,8 @@ if __name__ == "__main__":
         step_install(args.repo)
 
     elif args.step == "server":
-        step_server(args.workdir, args.gemini_key, args.aws_id, args.aws_secret, args.aws_region, args.aws_bucket, args.aws_public_bucket, args.aws_endpoint)
+        # For standalone server step, mount drive first for directories
+        uploads_dir, output_dir = step_mount_drive()
+        step_server(args.workdir, uploads_dir, output_dir, args.gemini_key,
+                    args.aws_id, args.aws_secret, args.aws_region, args.aws_bucket,
+                    args.aws_public_bucket, args.aws_endpoint)
