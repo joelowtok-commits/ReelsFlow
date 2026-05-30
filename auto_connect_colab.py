@@ -282,10 +282,50 @@ def sync_worker(gpu_ip):
             pass
 
 
+def load_env_file():
+    """Load .env file from script directory."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    env_vars = {}
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    eq = line.find("=")
+                    if eq != -1:
+                        key = line[:eq].strip()
+                        val = line[eq+1:].strip()
+                        if val:
+                            env_vars[key] = val
+    return env_vars
+
+
 def main():
     print("=" * 60)
     print("🔍 OpenShorts — Auto Connect Colab GPU")
     print("=" * 60)
+
+    # Load .env
+    env_vars = load_env_file()
+    google_drive_path = env_vars.get("GOOGLE_DRIVE_PATH", "")
+
+    if google_drive_path:
+        print(f"\n📂 MODO GOOGLE DRIVE ACTIVO")
+        print(f"   Ruta: {google_drive_path}")
+        print(f"   Los archivos se sincronizan por Drive, NO por HTTP.")
+        # Verify the drive path exists
+        if not os.path.exists(google_drive_path):
+            print(f"\n⚠️  La ruta de Google Drive no existe: {google_drive_path}")
+            print(f"   Asegurate de tener Google Drive Desktop instalado y sincronizado.")
+            print(f"   Creando la carpeta...")
+            os.makedirs(google_drive_path, exist_ok=True)
+        # Ensure subfolders exist
+        os.makedirs(os.path.join(google_drive_path, "uploads"), exist_ok=True)
+        os.makedirs(os.path.join(google_drive_path, "output"), exist_ok=True)
+        os.makedirs(os.path.join(google_drive_path, "output", "thumbnails"), exist_ok=True)
+    else:
+        print(f"\n⚠️  GOOGLE_DRIVE_PATH no configurado en .env")
+        print(f"   Se usará sincronización HTTP (más lenta, puede dar timeouts)")
 
     # 1. Check Tailscale
     status = get_tailscale_status()
@@ -339,58 +379,67 @@ def main():
         print(f"   🧠 CPU Cores: {cores}")
         print(f"   💾 RAM: {ram} GB")
         print(f"   🎮 GPU: {gpu}")
-        
-        # Start background sync daemon!
-        import threading
-        t = threading.Thread(target=sync_worker, args=(gpu_ip,), daemon=True)
-        t.start()
+
+        # Start sync daemon ONLY if Google Drive is NOT configured
+        if not google_drive_path:
+            import threading
+            t = threading.Thread(target=sync_worker, args=(gpu_ip,), daemon=True)
+            t.start()
+            print(f"\n🔄 Sync HTTP daemon iniciado (sin Google Drive)")
+        else:
+            print(f"\n📂 Sync HTTP daemon DESACTIVADO (archivos van por Google Drive)")
     else:
         print(f"   ⚠️  Backend no responde aún. Puede estar arrancando...")
         print(f"   💡 Esperá 1-2 minutos y volvé a intentar.")
 
-    # 4. Show how to use
+    # 4. Show info
     print(f"\n{'=' * 60}")
-    print(f"🚀 Para usar OpenShorts con Colab GPU:")
-    print(f"{'=' * 60}")
-    print(f"\n   cd dashboard")
-    print(f"   set VITE_BACKEND_URL=http://{gpu_ip}:8000")
-    print(f"   npm run dev")
-    print(f"\n   O en una sola línea (PowerShell):")
-    print(f"   $env:VITE_BACKEND_URL='http://{gpu_ip}:8000'; npm run dev")
-    # 5. Check for --auto flag or ask user
-    import sys
-    auto_launch = '--auto' in sys.argv or '-a' in sys.argv
+    if google_drive_path:
+        print(f"🚀 MODO GOOGLE DRIVE — Archivos sincronizados por Drive")
+        print(f"{'=' * 60}")
+        print(f"\n   📂 Uploads:    {os.path.join(google_drive_path, 'uploads')}")
+        print(f"   📂 Output:     {os.path.join(google_drive_path, 'output')}")
+        print(f"   🌐 API (solo JSON): http://{gpu_ip}:8000")
+        print(f"\n   ⚡ Videos/thumbnails se sirven desde tu disco local.")
+        print(f"   ⚡ NO se transfieren archivos pesados por HTTP.")
+    else:
+        print(f"🚀 Para usar OpenShorts con Colab GPU:")
+        print(f"{'=' * 60}")
+        print(f"\n   cd dashboard")
+        print(f"   set VITE_BACKEND_URL=http://{gpu_ip}:8000")
+        print(f"   npm run dev")
 
-    if auto_launch:
-        print(f"\n🚀 Modo automático: Lanzando dashboard apuntando a Colab GPU...")
-        dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
+    # 5. Launch dashboard
+    import sys as _sys
+    auto_launch = '--auto' in _sys.argv or '-a' in _sys.argv
+
+    def launch_dashboard():
+        print(f"\n🚀 Lanzando dashboard apuntando a Colab GPU...")
+        dashboard_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard")
         env = os.environ.copy()
         env["VITE_BACKEND_URL"] = f"http://{gpu_ip}:8000"
+        # Pass Google Drive path to Vite so it can serve files locally
+        if google_drive_path:
+            env["GOOGLE_DRIVE_PATH"] = google_drive_path
         subprocess.run(
             ["npm", "run", "dev"],
             cwd=dashboard_dir,
             env=env,
             shell=True
         )
+
+    if auto_launch:
+        launch_dashboard()
     else:
         try:
             answer = input("\n¿Lanzar el dashboard ahora? (s/n) [por defecto: s]: ").strip().lower()
-            # Acepta vacío, 's', 'si', 'y', 'yes' como afirmativo
             if answer in ('', 's', 'si', 'y', 'yes'):
-                print(f"\n🚀 Lanzando dashboard apuntando a Colab GPU...")
-                dashboard_dir = os.path.join(os.path.dirname(__file__), "dashboard")
-                env = os.environ.copy()
-                env["VITE_BACKEND_URL"] = f"http://{gpu_ip}:8000"
-                subprocess.run(
-                    ["npm", "run", "dev"],
-                    cwd=dashboard_dir,
-                    env=env,
-                    shell=True
-                )
+                launch_dashboard()
         except KeyboardInterrupt:
-            print("\n\n👋 Cancelado. Usá los comandos de arriba para lanzar manualmente.")
+            print("\n\n👋 Cancelado.")
 
 
 if __name__ == "__main__":
     main()
+
 
